@@ -178,6 +178,7 @@ fn parse_token(token: impl AsRef<str>) -> String {
         token.to_string()
     } else {
         format!("Bot {}", token)
+    }
 }
 
 fn reason_into_header(reason: &str) -> Headers {
