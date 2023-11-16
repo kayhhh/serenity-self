@@ -1,10 +1,10 @@
 [![ci-badge][]][ci] [![docs-badge][]][docs] [![guild-badge][]][guild] [![crates.io version]][crates.io link] [![rust-version-badge]][rust-version-link]
 
-# serenity
+# serenity-self
 
 ![serenity logo][logo]
 
-Serenity is a Rust library for the Discord API.
+Serenity is a Rust library for the Discord API. This fork contains changes to support selfbots.
 
 View the [examples] on how to use serenity's API. To make a bot with slash commands or text
 commands, see the [poise](https://github.com/serenity-rs/poise) framework built on top of serenity.
