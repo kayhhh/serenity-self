@@ -99,7 +99,7 @@ Add the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-serenity = { git = "https://github.com/nshout/serenity", branch = "current" }
+serenity = { git = "https://github.com/nshout/serenity-self", branch = "current" }
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
 ```
 
