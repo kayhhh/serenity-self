@@ -2,14 +2,16 @@
 
 # serenity-self
 
-Serenity is a Rust library for the Discord API.
+![serenity-self logo](https://cdn.discordapp.com/avatars/282201122733686784/2b23738e06aa3caced444ea052c35cd4.png?size=256&width=0&height=256)
+
+Serenity-self is a Rust library for the Discord API.
 
 View the [examples] on how to use serenity's API. To make a bot with slash commands or text
 commands, see the [poise](https://github.com/serenity-rs/poise) framework built on top of serenity.
 To send and receive data from voice channels, see the
 [songbird](https://github.com/serenity-rs/songbird) library.
 
-Serenity supports bot login via the use of [`Client::builder`].
+Serenity-self supports user token login via the use of [`Client::builder`].
 
 You may also check your tokens prior to login via the use of
 [`validate_token`].
@@ -38,6 +40,9 @@ docs.
 # Fork Changes
 
 Changed the token check to allow user tokens to allow selfbots.
+
+Credits
+- [Serenity](https://github.com/serenity-rs/serenity) for the original Discord API wrapper
 
 # Example Bot
 
