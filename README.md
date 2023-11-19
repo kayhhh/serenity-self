@@ -2,9 +2,7 @@
 
 # serenity-self
 
-![serenity logo][logo]
-
-Serenity is a Rust library for the Discord API. This fork contains changes to support selfbots.
+Serenity is a Rust library for the Discord API.
 
 View the [examples] on how to use serenity's API. To make a bot with slash commands or text
 commands, see the [poise](https://github.com/serenity-rs/poise) framework built on top of serenity.
@@ -36,6 +34,10 @@ Note that - although this documentation will try to be as up-to-date and
 accurate as possible - Discord hosts [official documentation][discord docs]. If
 you need to be sure that some information piece is accurate, refer to their
 docs.
+
+# Fork Changes
+
+Changed the token check to allow user tokens to allow selfbots.
 
 # Example Bot
 
