@@ -5,13 +5,12 @@ use serde::{Deserialize, Serialize};
 
 bitflags! {
     /// Flag set describing how a speaker is sending audio.
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     pub struct SpeakingState: u8 {
         /// Normal transmission of voice audio.
         const MICROPHONE = 1;
-
         /// Transmission of context audio for video, no speaking indicator.
         const SOUNDSHARE = 1 << 1;
-
         /// Priority speaker, lowering audio of other speakers.
         const PRIORITY = 1 << 2;
     }
@@ -31,6 +30,8 @@ impl SpeakingState {
     }
 }
 
+// Manual impl needed because object is sent as a flags integer
+// (could maybe just put `#[serde(transparent)]` on the type?)
 impl<'de> Deserialize<'de> for SpeakingState {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Ok(Self::from_bits_truncate(u8::deserialize(deserializer)?))

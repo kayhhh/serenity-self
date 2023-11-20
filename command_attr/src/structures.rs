@@ -14,6 +14,7 @@ use syn::{
     FnArg,
     Ident,
     Pat,
+    Path,
     ReturnType,
     Stmt,
     Token,
@@ -24,10 +25,11 @@ use syn::{
 use crate::consts::CHECK;
 use crate::util::{self, Argument, AsOption, IdentExt2, Parenthesised};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub enum OnlyIn {
     Dm,
     Guild,
+    #[default]
     None,
 }
 
@@ -50,13 +52,6 @@ impl ToTokens for OnlyIn {
             Self::Guild => stream.extend(quote!(#only_in_path::Guild)),
             Self::None => stream.extend(quote!(#only_in_path::None)),
         }
-    }
-}
-
-impl Default for OnlyIn {
-    #[inline]
-    fn default() -> Self {
-        OnlyIn::None
     }
 }
 
@@ -88,11 +83,11 @@ fn parse_argument(arg: FnArg) -> Result<Argument> {
                         kind: *kind,
                     })
                 },
-                _ => Err(Error::new(pat.span(), format_args!("unsupported pattern: {:?}", pat))),
+                _ => Err(Error::new(pat.span(), format_args!("unsupported pattern: {pat:?}"))),
             }
         },
         FnArg::Receiver(_) => {
-            Err(Error::new(arg.span(), format_args!("`self` arguments are prohibited: {:?}", arg)))
+            Err(Error::new(arg.span(), format_args!("`self` arguments are prohibited: {arg:?}")))
         },
     }
 }
@@ -105,7 +100,12 @@ fn is_cooked(attr: &Attribute) -> bool {
     COOKED_ATTRIBUTE_NAMES.iter().any(|n| attr.path.is_ident(n))
 }
 
-/// Removes cooked attributes from a vector of attributes. Uncooked attributes are left in the vector.
+pub fn is_rustfmt_or_clippy_attr(path: &Path) -> bool {
+    path.segments.first().map_or(false, |s| s.ident == "rustfmt" || s.ident == "clippy")
+}
+
+/// Removes cooked attributes from a vector of attributes. Uncooked attributes are left in the
+/// vector.
 ///
 /// # Return
 ///
@@ -116,7 +116,7 @@ fn remove_cooked(attrs: &mut Vec<Attribute>) -> Vec<Attribute> {
     // FIXME: Replace with `Vec::drain_filter` once it is stable.
     let mut i = 0;
     while i < attrs.len() {
-        if !is_cooked(&attrs[i]) {
+        if !is_cooked(&attrs[i]) && !is_rustfmt_or_clippy_attr(&attrs[i].path) {
             i += 1;
             continue;
         }
@@ -131,8 +131,8 @@ fn remove_cooked(attrs: &mut Vec<Attribute>) -> Vec<Attribute> {
 pub struct CommandFun {
     /// `#[...]`-style attributes.
     pub attributes: Vec<Attribute>,
-    /// Populated cooked attributes. These are attributes outside of the realm of this crate's procedural macros
-    /// and will appear in generated output.
+    /// Populated cooked attributes. These are attributes outside of the realm of this crate's
+    /// procedural macros and will appear in generated output.
     pub cooked: Vec<Attribute>,
     pub visibility: Visibility,
     pub name: Ident,
@@ -334,8 +334,8 @@ impl Permissions {
             "MANAGE_NICKNAMES" => 1 << 27,
             "MANAGE_ROLES" => 1 << 28,
             "MANAGE_WEBHOOKS" => 1 << 29,
-            "MANAGE_EMOJIS_AND_STICKERS" => 1 << 30,
-            "USE_SLASH_COMMANDS" => 1 << 31,
+            "MANAGE_EMOJIS_AND_STICKERS" | "MANAGE_GUILD_EXPRESSIONS" => 1 << 30,
+            "USE_SLASH_COMMANDS" | "USE_APPLICATION_COMMANDS" => 1 << 31,
             "REQUEST_TO_SPEAK" => 1 << 32,
             "MANAGE_EVENTS" => 1 << 33,
             "MANAGE_THREADS" => 1 << 34,
@@ -345,6 +345,13 @@ impl Permissions {
             "SEND_MESSAGES_IN_THREADS" => 1 << 38,
             "USE_EMBEDDED_ACTIVITIES" => 1 << 39,
             "MODERATE_MEMBERS" => 1 << 40,
+            "VIEW_CREATOR_MONETIZATION_ANALYTICS" => 1 << 41,
+            "USE_SOUNDBOARD" => 1 << 42,
+            "CREATE_GUILD_EXPRESSIONS" => 1 << 43,
+            "CREATE_EVENTS" => 1 << 44,
+            "USE_EXTERNAL_SOUNDS" => 1 << 45,
+            "SEND_VOICE_MESSAGES" => 1 << 46,
+            "SET_VOICE_CHANNEL_STATUS" => 1 << 48,
             _ => return None,
         }))
     }
@@ -362,7 +369,7 @@ impl ToTokens for Permissions {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Colour(pub u32);
 
 impl Colour {
@@ -414,7 +421,7 @@ impl Colour {
 impl ToTokens for Colour {
     fn to_tokens(&self, stream: &mut TokenStream2) {
         let value = self.0;
-        let path = quote!(serenity::utils::Colour);
+        let path = quote!(serenity::model::Colour);
 
         stream.extend(quote! {
             #path(#value)
@@ -463,7 +470,7 @@ impl Options {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum HelpBehaviour {
     Strike,
     Hide,
@@ -492,7 +499,7 @@ impl ToTokens for HelpBehaviour {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct HelpOptions {
     pub suggestion_text: String,
     pub no_help_available_text: String,

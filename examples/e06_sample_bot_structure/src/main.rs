@@ -1,5 +1,4 @@
-//! Requires the 'framework' feature flag be enabled in your project's
-//! `Cargo.toml`.
+//! Requires the 'framework' feature flag be enabled in your project's `Cargo.toml`.
 //!
 //! This can be enabled by specifying the feature in the dependency section:
 //!
@@ -15,9 +14,9 @@ use std::env;
 use std::sync::Arc;
 
 use serenity::async_trait;
-use serenity::client::bridge::gateway::ShardManager;
 use serenity::framework::standard::macros::group;
 use serenity::framework::StandardFramework;
+use serenity::gateway::ShardManager;
 use serenity::http::Http;
 use serenity::model::event::ResumedEvent;
 use serenity::model::gateway::Ready;
@@ -31,7 +30,7 @@ use crate::commands::owner::*;
 pub struct ShardManagerContainer;
 
 impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<ShardManager>>;
+    type Value = Arc<ShardManager>;
 }
 
 struct Handler;
@@ -53,14 +52,13 @@ struct General;
 
 #[tokio::main]
 async fn main() {
-    // This will load the environment variables located at `./.env`, relative to
-    // the CWD. See `./.env.example` for an example on how to structure this.
+    // This will load the environment variables located at `./.env`, relative to the CWD.
+    // See `./.env.example` for an example on how to structure this.
     dotenv::dotenv().expect("Failed to load .env file");
 
     // Initialize the logger to use environment variables.
     //
-    // In this case, a good default is setting the environment variable
-    // `RUST_LOG` to `debug`.
+    // In this case, a good default is setting the environment variable `RUST_LOG` to `debug`.
     tracing_subscriber::fmt::init();
 
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
@@ -71,7 +69,9 @@ async fn main() {
     let (owners, _bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
             let mut owners = HashSet::new();
-            owners.insert(info.owner.id);
+            if let Some(owner) = &info.owner {
+                owners.insert(owner.id);
+            }
 
             (owners, info.id)
         },
@@ -79,8 +79,8 @@ async fn main() {
     };
 
     // Create the framework
-    let framework =
-        StandardFramework::new().configure(|c| c.owners(owners).prefix("~")).group(&GENERAL_GROUP);
+    let framework = StandardFramework::new().group(&GENERAL_GROUP);
+    framework.configure(|c| c.owners(owners).prefix("~"));
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -100,7 +100,7 @@ async fn main() {
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
-        shard_manager.lock().await.shutdown_all().await;
+        shard_manager.shutdown_all().await;
     });
 
     if let Err(why) = client.start().await {

@@ -24,9 +24,9 @@ impl<E> From<E> for Error<E> {
 
 impl<E: fmt::Display> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
+        match self {
             Self::Eos => f.write_str(r#"ArgError("end of string")"#),
-            Self::Parse(ref e) => write!(f, "ArgError(\"{}\")", e),
+            Self::Parse(e) => write!(f, "ArgError(\"{e}\")"),
         }
     }
 }
@@ -80,14 +80,14 @@ impl<'a> From<&'a str> for Delimiter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(clippy::enum_variant_names)]
 enum TokenKind {
     Argument,
     QuotedArgument,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Token {
     kind: TokenKind,
     span: (usize, usize),
@@ -149,7 +149,7 @@ fn lex(stream: &mut Stream<'_>, delims: &[Cow<'_, str>]) -> Option<Token> {
             result
         });
 
-        let is_quote = stream.current_char().map_or(false, |c| kind.is_ending_quote(c));
+        let is_quote = stream.current_char().is_some_and(|c| kind.is_ending_quote(c));
         stream.next_char();
 
         let end = stream.offset();
@@ -216,7 +216,7 @@ fn remove_quotes(s: &str) -> &str {
     strip(s, '\u{201C}', '\u{201D}').unwrap_or(s)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum State {
     None,
     Quoted,
@@ -228,7 +228,8 @@ enum State {
 
 /// A utility struct for handling "arguments" of a command.
 ///
-/// An "argument" is a part of the message up that ends at one of the specified delimiters, or the end of the message.
+/// An "argument" is a part of the message up that ends at one of the specified delimiters, or the
+/// end of the message.
 ///
 /// # Example
 ///
@@ -290,8 +291,9 @@ enum State {
 /// assert_eq!(res, "42");
 /// ```
 ///
-/// Hmm, taking a glance at the prior example, it seems we have an issue with reading the same argument over and over.
-/// Is there a more sensible solution than rewinding...? Actually, there is! The [`Self::current`] and [`Self::parse`] methods:
+/// Hmm, taking a glance at the prior example, it seems we have an issue with reading the same
+/// argument over and over. Is there a more sensible solution than rewinding...? Actually, there is!
+/// The [`Self::current`] and [`Self::parse`] methods:
 ///
 /// ```rust
 /// use serenity::framework::standard::{Args, Delimiter};
@@ -404,8 +406,7 @@ impl Args {
         &self.message[start..end]
     }
 
-    /// Move to the next argument.
-    /// This increments the offset pointer.
+    /// Move to the next argument. This increments the offset pointer.
     ///
     /// Does nothing if the message is empty.
     pub fn advance(&mut self) -> &mut Self {
@@ -418,8 +419,7 @@ impl Args {
         self
     }
 
-    /// Go one step behind.
-    /// This decrements the offset pointer.
+    /// Go one step behind. This decrements the offset pointer.
     ///
     /// Does nothing if the offset pointer is `0`.
     #[inline]
@@ -551,8 +551,8 @@ impl Args {
 
     /// Remove quotations surrounding all arguments.
     ///
-    /// Note that only the quotes of the argument are taken into account.
-    /// The quotes in the message are preserved.
+    /// Note that only the quotes of the argument are taken into account. The quotes in the message
+    /// are preserved.
     ///
     /// # Examples
     ///
@@ -604,7 +604,8 @@ impl Args {
 
     /// Parse the current argument.
     ///
-    /// Modifications of [`Self::trimmed`] and [`Self::quoted`] are also applied if they were called.
+    /// Modifications of [`Self::trimmed`] and [`Self::quoted`] are also applied if they were
+    /// called.
     ///
     /// # Examples
     ///
@@ -628,8 +629,8 @@ impl Args {
 
     /// Parse the current argument and advance.
     ///
-    /// Shorthand for calling [`Self::parse`], storing the result,
-    /// calling [`Self::advance`] and returning the result.
+    /// Shorthand for calling [`Self::parse`], storing the result, calling [`Self::advance`] and
+    /// returning the result.
     ///
     /// # Examples
     ///
@@ -681,10 +682,11 @@ impl Args {
         Ok(p)
     }
 
-    /// By starting from the current offset, iterate over
-    /// any available arguments until there are none.
+    /// By starting from the current offset, iterate over any available arguments until there are
+    /// none.
     ///
-    /// Modifications of [`Iter::trimmed`] and [`Iter::quoted`] are also applied to all arguments if they were called.
+    /// Modifications of [`Iter::trimmed`] and [`Iter::quoted`] are also applied to all arguments if
+    /// they were called.
     ///
     /// # Examples
     ///
@@ -758,14 +760,16 @@ impl Args {
         raw
     }
 
-    /// Search for any available argument that can be parsed, and remove it from the "arguments queue".
+    /// Search for any available argument that can be parsed, and remove it from the arguments
+    /// queue.
     ///
     /// # Note
     /// The removal is irreversible. And happens after the search *and* the parse were successful.
     ///
     /// # Note 2
-    /// "Arguments queue" is the list which contains all arguments that were deemed unique as defined by quotations and delimiters.
-    /// The 'removed' argument can be, likewise, still accessed via [`Self::message`].
+    /// "Arguments queue" is the list which contains all arguments that were deemed unique as
+    /// defined by quotations and delimiters. The 'removed' argument can be, likewise, still
+    /// accessed via [`Self::message`].
     ///
     /// # Examples
     ///
@@ -790,9 +794,7 @@ impl Args {
         let before = self.offset;
         self.restore();
 
-        let pos = if let Some(p) = self.iter::<T>().quoted().position(|res| res.is_ok()) {
-            p
-        } else {
+        let Some(pos) = self.iter::<T>().quoted().position(|res| res.is_ok()) else {
             self.offset = before;
             return Err(Error::Eos);
         };
@@ -835,9 +837,7 @@ impl Args {
         let before = self.offset;
         self.restore();
 
-        let pos = if let Some(p) = self.iter::<T>().quoted().position(|res| res.is_ok()) {
-            p
-        } else {
+        let Some(pos) = self.iter::<T>().quoted().position(|res| res.is_ok()) else {
             self.offset = before;
             return Err(Error::Eos);
         };
@@ -879,13 +879,12 @@ impl Args {
         Some(&self.message[start..])
     }
 
-    /// Return the full amount of recognised arguments.
-    /// The length of the "arguments queue".
+    /// Return the full amount of recognised arguments. The length of the "arguments queue".
     ///
     /// # Note
     ///
-    /// The value returned is to be assumed to stay static.
-    /// However, if [`Self::find`] was called previously, and was successful, then the value is subtracted by one.
+    /// The value returned is to be assumed to stay static. However, if [`Self::find`] was called
+    /// previously, and was successful, then the value is subtracted by one.
     #[inline]
     #[must_use]
     pub fn len(&self) -> usize {

@@ -1,13 +1,14 @@
-use std::collections::HashMap;
-
-use crate::json::{from_number, Value, NULL};
-use crate::model::id::{ApplicationId, UserId};
-use crate::model::invite::InviteTargetType;
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
 /// A builder to create a [`RichInvite`] for use via [`GuildChannel::create_invite`].
 ///
-/// This is a structured and cleaner way of creating an invite, as all
-/// parameters are optional.
+/// This is a structured and cleaner way of creating an invite, as all parameters are optional.
 ///
 /// # Examples
 ///
@@ -19,6 +20,7 @@ use crate::model::invite::InviteTargetType;
 /// # use serenity::prelude::*;
 /// # use serenity::model::prelude::*;
 /// # use serenity::model::channel::Channel;
+/// use serenity::builder::CreateInvite;
 ///
 /// struct Handler;
 ///
@@ -26,7 +28,8 @@ use crate::model::invite::InviteTargetType;
 /// impl EventHandler for Handler {
 ///     async fn message(&self, context: Context, msg: Message) {
 ///         if msg.content == "!createinvite" {
-///             let channel = match context.cache.guild_channel(msg.channel_id) {
+///             let channel_opt = context.cache.channel(msg.channel_id).as_deref().cloned();
+///             let channel = match channel_opt {
 ///                 Some(channel) => channel,
 ///                 None => {
 ///                     let _ = msg.channel_id.say(&context, "Error creating invite").await;
@@ -34,8 +37,8 @@ use crate::model::invite::InviteTargetType;
 ///                 },
 ///             };
 ///
-///             let creation =
-///                 channel.create_invite(&context, |i| i.max_age(3600).max_uses(10)).await;
+///             let builder = CreateInvite::new().max_age(3600).max_uses(10);
+///             let creation = channel.create_invite(&context, builder).await;
 ///
 ///             let invite = match creation {
 ///                 Ok(invite) => invite,
@@ -61,16 +64,39 @@ use crate::model::invite::InviteTargetType;
 ///     Client::builder("token", GatewayIntents::default()).event_handler(Handler).await?;
 ///
 /// client.start().await?;
-/// #     Ok(())
+/// # Ok(())
 /// # }
 /// ```
 ///
-/// [`GuildChannel::create_invite`]: crate::model::channel::GuildChannel::create_invite
-/// [`RichInvite`]: crate::model::invite::RichInvite
-#[derive(Clone, Debug)]
-pub struct CreateInvite(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/channel#create-channel-invite)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct CreateInvite<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_age: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_uses: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temporary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unique: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_type: Option<InviteTargetType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_user_id: Option<UserId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_application_id: Option<ApplicationId>,
 
-impl CreateInvite {
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> CreateInvite<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// The duration that the invite will be valid for.
     ///
     /// Set to `0` for an invite which does not expire after an amount of time.
@@ -87,18 +113,19 @@ impl CreateInvite {
     /// # #[cfg(feature = "framework")]
     /// # use serenity::framework::standard::{CommandResult, macros::command};
     /// # use serenity::model::id::ChannelId;
+    /// # use serenity::builder::CreateInvite;
     /// #
     /// # #[cfg(all(feature = "cache", feature = "client", feature = "framework", feature = "http"))]
     /// # #[command]
     /// # async fn example(context: &Context) -> CommandResult {
-    /// #     let channel = context.cache.guild_channel(81384788765712384).unwrap();
-    /// #
-    /// let invite = channel.create_invite(context, |i| i.max_age(3600)).await?;
-    /// #     Ok(())
+    /// # let channel = context.cache.channel(81384788765712384).unwrap().clone();
+    /// let builder = CreateInvite::new().max_age(3600);
+    /// let invite = channel.create_invite(context, builder).await?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn max_age(&mut self, max_age: u64) -> &mut Self {
-        self.0.insert("max_age", from_number(max_age));
+    pub fn max_age(mut self, max_age: u32) -> Self {
+        self.max_age = Some(max_age);
         self
     }
 
@@ -118,18 +145,19 @@ impl CreateInvite {
     /// # #[cfg(feature = "framework")]
     /// # use serenity::framework::standard::{CommandResult, macros::command};
     /// # use serenity::model::id::ChannelId;
+    /// # use serenity::builder::CreateInvite;
     /// #
     /// # #[cfg(all(feature = "cache", feature = "client", feature = "framework", feature = "http"))]
     /// # #[command]
     /// # async fn example(context: &Context) -> CommandResult {
-    /// #     let channel = context.cache.guild_channel(81384788765712384).unwrap();
-    /// #
-    /// let invite = channel.create_invite(context, |i| i.max_uses(5)).await?;
-    /// #     Ok(())
+    /// # let channel = context.cache.channel(81384788765712384).unwrap().clone();
+    /// let builder = CreateInvite::new().max_uses(5);
+    /// let invite = channel.create_invite(context, builder).await?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn max_uses(&mut self, max_uses: u64) -> &mut Self {
-        self.0.insert("max_uses", from_number(max_uses));
+    pub fn max_uses(mut self, max_uses: u8) -> Self {
+        self.max_uses = Some(max_uses);
         self
     }
 
@@ -147,20 +175,19 @@ impl CreateInvite {
     /// # #[cfg(feature = "framework")]
     /// # use serenity::framework::standard::{CommandResult, macros::command};
     /// # use serenity::model::id::ChannelId;
+    /// # use serenity::builder::CreateInvite;
     /// #
     /// # #[cfg(all(feature = "cache", feature = "client", feature = "framework", feature = "http"))]
     /// # #[command]
     /// # async fn example(context: &Context) -> CommandResult {
-    /// #     let channel = context.cache.guild_channel(81384788765712384).unwrap();
-    /// #
-    /// let invite = channel.create_invite(context, |i| i.temporary(true)).await?;
-    /// #     Ok(())
+    /// # let channel = context.cache.channel(81384788765712384).unwrap().clone();
+    /// let builder = CreateInvite::new().temporary(true);
+    /// let invite = channel.create_invite(context, builder).await?;
+    /// # Ok(())
     /// # }
-    /// #
-    /// # fn main() {}
     /// ```
-    pub fn temporary(&mut self, temporary: bool) -> &mut Self {
-        self.0.insert("temporary", Value::from(temporary));
+    pub fn temporary(mut self, temporary: bool) -> Self {
+        self.temporary = Some(temporary);
         self
     }
 
@@ -178,37 +205,39 @@ impl CreateInvite {
     /// # #[cfg(feature = "framework")]
     /// # use serenity::framework::standard::{CommandResult, macros::command};
     /// # use serenity::model::id::ChannelId;
+    /// # use serenity::builder::CreateInvite;
     /// #
     /// # #[cfg(all(feature = "cache", feature = "client", feature = "framework", feature = "http"))]
     /// # #[command]
     /// # async fn example(context: &Context) -> CommandResult {
-    /// #     let channel = context.cache.guild_channel(81384788765712384).unwrap();
-    /// #
-    /// let invite = channel.create_invite(context, |i| i.unique(true)).await?;
-    /// #     Ok(())
+    /// # let channel = context.cache.channel(81384788765712384).unwrap().clone();
+    /// let builder = CreateInvite::new().unique(true);
+    /// let invite = channel.create_invite(context, builder).await?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn unique(&mut self, unique: bool) -> &mut Self {
-        self.0.insert("unique", Value::from(unique));
+    pub fn unique(mut self, unique: bool) -> Self {
+        self.unique = Some(unique);
         self
     }
 
     /// The type of target for this voice channel invite.
-    pub fn target_type(&mut self, target_type: InviteTargetType) -> &mut Self {
-        self.0.insert("target_type", from_number(target_type as u8));
+    pub fn target_type(mut self, target_type: InviteTargetType) -> Self {
+        self.target_type = Some(target_type);
         self
     }
 
     /// The ID of the user whose stream to display for this invite, required if `target_type` is
     /// `Stream`
     /// The user must be streaming in the channel.
-    pub fn target_user_id(&mut self, target_user_id: UserId) -> &mut Self {
-        self.0.insert("target_user_id", from_number(target_user_id.0));
+    pub fn target_user_id(mut self, target_user_id: UserId) -> Self {
+        self.target_user_id = Some(target_user_id);
         self
     }
 
     /// The ID of the embedded application to open for this invite, required if `target_type` is
-    /// `EmmbeddedApplication`
+    /// `EmmbeddedApplication`.
+    ///
     /// The application must have the `EMBEDDED` flag.
     ///
     /// When sending an invite with this value, the first user to use the invite will have to click
@@ -221,28 +250,46 @@ impl CreateInvite {
     /// fishing: `814288819477020702`
     /// poker: `755827207812677713`
     /// chess: `832012774040141894`
-    pub fn target_application_id(&mut self, target_application_id: ApplicationId) -> &mut Self {
-        self.0.insert("target_application_id", from_number(target_application_id.0));
+    pub fn target_application_id(mut self, target_application_id: ApplicationId) -> Self {
+        self.target_application_id = Some(target_application_id);
+        self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
         self
     }
 }
 
-impl Default for CreateInvite {
-    /// Creates a builder with default values, setting `validate` to `null`.
-    ///
-    /// # Examples
-    ///
-    /// Create a default [`CreateInvite`] builder:
-    ///
-    /// ```rust
-    /// use serenity::builder::CreateInvite;
-    ///
-    /// let invite_builder = CreateInvite::default();
-    /// ```
-    fn default() -> CreateInvite {
-        let mut map = HashMap::new();
-        map.insert("validate", NULL);
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for CreateInvite<'a> {
+    type Context<'ctx> = ChannelId;
+    type Built = RichInvite;
 
-        CreateInvite(map)
+    /// Creates an invite for the given channel.
+    ///
+    /// **Note**: Requires the [Create Instant Invite] permission.
+    ///
+    /// # Errors
+    ///
+    /// If the `cache` is enabled, returns [`ModelError::InvalidPermissions`] if the current user
+    /// lacks permission. Otherwise returns [`Error::Http`], as well as if invalid data is given.
+    ///
+    /// [Create Instant Invite]: Permissions::CREATE_INSTANT_INVITE
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<RichInvite> {
+        #[cfg(feature = "cache")]
+        {
+            if let Some(cache) = cache_http.cache() {
+                crate::utils::user_has_perms_cache(cache, ctx, Permissions::CREATE_INSTANT_INVITE)?;
+            }
+        }
+
+        cache_http.http().create_invite(ctx, &self, self.audit_log_reason).await
     }
 }

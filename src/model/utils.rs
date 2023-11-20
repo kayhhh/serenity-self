@@ -5,19 +5,7 @@ use std::marker::PhantomData;
 
 use serde::ser::{Serialize, SerializeSeq, Serializer};
 
-#[cfg(all(feature = "cache", feature = "model"))]
-use super::permissions::Permissions;
 use super::prelude::*;
-#[cfg(all(feature = "cache", feature = "model"))]
-use crate::cache::Cache;
-#[cfg(feature = "cache")]
-use crate::internal::prelude::*;
-use crate::model::application::command::CommandOptionType;
-use crate::model::application::interaction::application_command::{
-    CommandDataOption,
-    CommandDataOptionValue,
-    CommandDataResolved,
-};
 
 pub fn default_true() -> bool {
     true
@@ -27,6 +15,61 @@ pub fn default_true() -> bool {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn is_false(v: &bool) -> bool {
     !v
+}
+
+#[allow(clippy::unnecessary_wraps)]
+pub fn ignore_input<'de, D: Deserializer<'de>>(_: D) -> StdResult<(), D::Error> {
+    Ok(())
+}
+
+#[cfg(feature = "model")]
+pub(super) fn avatar_url(
+    guild_id: Option<GuildId>,
+    user_id: UserId,
+    hash: Option<&ImageHash>,
+) -> Option<String> {
+    hash.map(|hash| {
+        let ext = if hash.is_animated() { "gif" } else { "webp" };
+
+        if let Some(guild_id) = guild_id {
+            cdn!("/guilds/{}/users/{}/avatars/{}.{}?size=1024", guild_id, user_id, hash, ext)
+        } else {
+            cdn!("/avatars/{}/{}.{}?size=1024", user_id, hash, ext)
+        }
+    })
+}
+
+#[cfg(feature = "model")]
+pub(super) fn icon_url(id: GuildId, icon: Option<&ImageHash>) -> Option<String> {
+    icon.map(|icon| {
+        let ext = if icon.is_animated() { "gif" } else { "webp" };
+
+        cdn!("/icons/{}/{}.{}", id, icon, ext)
+    })
+}
+
+pub fn deserialize_val<T, E>(val: Value) -> StdResult<T, E>
+where
+    T: serde::de::DeserializeOwned,
+    E: serde::de::Error,
+{
+    T::deserialize(val).map_err(serde::de::Error::custom)
+}
+
+pub fn remove_from_map_opt<T, E>(map: &mut JsonMap, key: &str) -> StdResult<Option<T>, E>
+where
+    T: serde::de::DeserializeOwned,
+    E: serde::de::Error,
+{
+    map.remove(key).map(deserialize_val).transpose()
+}
+
+pub fn remove_from_map<T, E>(map: &mut JsonMap, key: &'static str) -> StdResult<T, E>
+where
+    T: serde::de::DeserializeOwned,
+    E: serde::de::Error,
+{
+    remove_from_map_opt(map, key)?.ok_or_else(|| serde::de::Error::missing_field(key))
 }
 
 /// Used with `#[serde(with = "emojis")]`
@@ -50,7 +93,7 @@ pub mod emojis {
 
 pub fn deserialize_guild_channels<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> StdResult<HashMap<ChannelId, Channel>, D::Error> {
+) -> StdResult<HashMap<ChannelId, GuildChannel>, D::Error> {
     struct TryDeserialize<T>(StdResult<T, String>);
     impl<'de, T: Deserialize<'de>> Deserialize<'de> for TryDeserialize<T> {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> StdResult<Self, D::Error> {
@@ -58,13 +101,13 @@ pub fn deserialize_guild_channels<'de, D: Deserializer<'de>>(
         }
     }
 
-    let vec: Vec<TryDeserialize<Channel>> = Deserialize::deserialize(deserializer)?;
+    let vec: Vec<TryDeserialize<GuildChannel>> = Deserialize::deserialize(deserializer)?;
     let mut map = HashMap::new();
 
     for channel in vec {
         match channel.0 {
             Ok(channel) => {
-                map.insert(channel.id(), channel);
+                map.insert(channel.id, channel);
             },
             Err(e) => tracing::warn!("skipping guild channel due to deserialization error: {}", e),
         }
@@ -77,88 +120,6 @@ pub fn deserialize_members<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> StdResult<HashMap<UserId, Member>, D::Error> {
     deserializer.deserialize_seq(SequenceToMapVisitor::new(|member: &Member| member.user.id))
-}
-
-pub fn deserialize_options_with_resolved<'de, D: Deserializer<'de>>(
-    deserializer: D,
-    resolved: &CommandDataResolved,
-) -> StdResult<Vec<CommandDataOption>, D::Error> {
-    let mut options = Vec::deserialize(deserializer)?;
-
-    for option in &mut options {
-        loop_resolved(option, resolved);
-    }
-
-    Ok(options)
-}
-
-fn try_resolve(
-    value: &Value,
-    kind: CommandOptionType,
-    resolved: &CommandDataResolved,
-) -> Option<CommandDataOptionValue> {
-    let string = value.as_str();
-
-    match kind {
-        CommandOptionType::User => {
-            let id = &UserId(string?.parse().ok()?);
-
-            let user = resolved.users.get(id)?.clone();
-            let member = resolved.members.get(id).cloned();
-
-            Some(CommandDataOptionValue::User(user, member))
-        },
-        CommandOptionType::Role => {
-            let id = &RoleId(string?.parse().ok()?);
-
-            let role = resolved.roles.get(id)?.clone();
-
-            Some(CommandDataOptionValue::Role(role))
-        },
-        CommandOptionType::Channel => {
-            let id = &ChannelId(string?.parse().ok()?);
-
-            let channel = resolved.channels.get(id)?.clone();
-
-            Some(CommandDataOptionValue::Channel(channel))
-        },
-        CommandOptionType::Mentionable => {
-            let id: u64 = string?.parse().ok()?;
-
-            if let Some(user) = resolved.users.get(&UserId(id)) {
-                let user = user.clone();
-                let member = resolved.members.get(&UserId(id)).cloned();
-
-                Some(CommandDataOptionValue::User(user, member))
-            } else {
-                let role = resolved.roles.get(&RoleId(id))?.clone();
-
-                Some(CommandDataOptionValue::Role(role))
-            }
-        },
-        CommandOptionType::String => Some(CommandDataOptionValue::String(string?.to_owned())),
-        CommandOptionType::Integer => Some(CommandDataOptionValue::Integer(value.as_i64()?)),
-        CommandOptionType::Boolean => Some(CommandDataOptionValue::Boolean(value.as_bool()?)),
-        CommandOptionType::Number => Some(CommandDataOptionValue::Number(value.as_f64()?)),
-        CommandOptionType::Attachment => {
-            let id = &AttachmentId(string?.parse().ok()?);
-
-            let attachment = resolved.attachments.get(id)?.clone();
-
-            Some(CommandDataOptionValue::Attachment(attachment))
-        },
-        _ => None,
-    }
-}
-
-fn loop_resolved(options: &mut CommandDataOption, resolved: &CommandDataResolved) {
-    if let Some(ref value) = options.value {
-        options.resolved = try_resolve(value, options.kind, resolved);
-    }
-
-    for option in &mut options.options {
-        loop_resolved(option, resolved);
-    }
 }
 
 /// Used with `#[serde(with = "presences")]`
@@ -183,51 +144,26 @@ pub mod presences {
 pub fn deserialize_buttons<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> StdResult<Vec<ActivityButton>, D::Error> {
-    let labels = Vec::deserialize(deserializer)?;
-    let mut buttons = vec![];
-
-    for label in labels {
-        buttons.push(ActivityButton {
-            label,
-            url: String::new(),
-        });
-    }
-
-    Ok(buttons)
-}
-
-/// Used with `#[serde(with = "private_channels")]`
-pub mod private_channels {
-    use std::collections::HashMap;
-
-    use serde::Deserializer;
-
-    use super::SequenceToMapVisitor;
-    use crate::model::channel::Channel;
-    use crate::model::id::ChannelId;
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<HashMap<ChannelId, Channel>, D::Error> {
-        deserializer.deserialize_seq(SequenceToMapVisitor::new(|channel: &Channel| match channel {
-            Channel::Private(ref channel) => channel.id,
-            Channel::Guild(_) => unreachable!("Guild private channel decode"),
-            Channel::Category(_) => unreachable!("Channel category private channel decode"),
-        }))
-    }
-
-    pub use super::serialize_map_values as serialize;
+    Vec::deserialize(deserializer).map(|labels| {
+        labels
+            .into_iter()
+            .map(|l| ActivityButton {
+                label: l,
+                url: String::new(),
+            })
+            .collect()
+    })
 }
 
 /// Used with `#[serde(with = "roles")]`
 pub mod roles {
     use std::collections::HashMap;
 
-    use serde::{Deserialize, Deserializer};
+    use serde::Deserializer;
 
     use super::SequenceToMapVisitor;
-    use crate::model::guild::{InterimRole, Role};
-    use crate::model::id::{GuildId, RoleId};
+    use crate::model::guild::Role;
+    use crate::model::id::RoleId;
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
@@ -236,25 +172,6 @@ pub mod roles {
     }
 
     pub use super::serialize_map_values as serialize;
-
-    /// Helper to deserialize `GuildRoleCreateEvent` and `GuildRoleUpdateEvent`.
-    pub fn deserialize_event<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Role, D::Error> {
-        #[derive(Deserialize)]
-        struct Event {
-            guild_id: GuildId,
-            role: InterimRole,
-        }
-
-        let Event {
-            guild_id,
-            role,
-        } = Event::deserialize(deserializer)?;
-
-        let mut role = Role::from(role);
-        role.guild_id = guild_id;
-
-        Ok(role)
-    }
 }
 
 /// Used with `#[serde(with = "stickers")]`
@@ -324,6 +241,24 @@ pub mod single_recipient {
     }
 }
 
+pub mod secret {
+    use secrecy::{ExposeSecret, Secret, Zeroize};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn deserialize<'de, S: Deserialize<'de> + Zeroize, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Secret<S>>, D::Error> {
+        Option::<S>::deserialize(deserializer).map(|s| s.map(Secret::new))
+    }
+
+    pub fn serialize<S: Serialize + Zeroize, Sr: Serializer>(
+        secret: &Option<Secret<S>>,
+        serializer: Sr,
+    ) -> Result<Sr::Ok, Sr::Error> {
+        secret.as_ref().map(|s| s.expose_secret()).serialize(serializer)
+    }
+}
+
 pub fn deserialize_voice_states<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> StdResult<HashMap<UserId, VoiceState>, D::Error> {
@@ -341,76 +276,6 @@ pub fn serialize_map_values<K, S: Serializer, V: Serialize>(
     }
 
     seq.end()
-}
-
-/// Tries to find a user's permissions using the cache.
-/// Unlike [`user_has_perms`], this function will return `true` even when
-/// the permissions are not in the cache.
-#[cfg(all(feature = "cache", feature = "model"))]
-#[inline]
-pub fn user_has_perms_cache(
-    cache: impl AsRef<Cache>,
-    channel_id: ChannelId,
-    guild_id: Option<GuildId>,
-    permissions: Permissions,
-) -> Result<()> {
-    if match user_has_perms(cache, channel_id, guild_id, permissions) {
-        Err(Error::Model(err)) => err.is_cache_err(),
-        result => result?,
-    } {
-        Ok(())
-    } else {
-        Err(Error::Model(ModelError::InvalidPermissions(permissions)))
-    }
-}
-
-#[cfg(all(feature = "cache", feature = "model"))]
-pub fn user_has_perms(
-    cache: impl AsRef<Cache>,
-    channel_id: ChannelId,
-    guild_id: Option<GuildId>,
-    mut permissions: Permissions,
-) -> Result<bool> {
-    let cache = cache.as_ref();
-
-    let channel = match cache.channel(channel_id) {
-        Some(channel) => channel,
-        None => return Err(Error::Model(ModelError::ChannelNotFound)),
-    };
-
-    // Both users in DMs, all users in groups, and maybe all channels in categories
-    // will have the same permissions.
-    //
-    // The only exception to this is when the current user is blocked by
-    // the recipient in a DM channel, preventing the current user
-    // from sending messages.
-    //
-    // Since serenity can't _reasonably_ check and keep track of these,
-    // just assume that all permissions are granted and return `true`.
-    let (guild_id, guild_channel) = match channel {
-        Channel::Guild(channel) => (channel.guild_id, channel),
-        Channel::Category(_) => return Ok(true),
-        Channel::Private(_) => match guild_id {
-            Some(_) => return Err(Error::Model(ModelError::InvalidChannelType)),
-            None => return Ok(true),
-        },
-    };
-
-    let guild = match cache.guild(guild_id) {
-        Some(guild) => guild,
-        None => return Err(Error::Model(ModelError::GuildNotFound)),
-    };
-
-    let member = match guild.members.get(&cache.current_user().id) {
-        Some(member) => member,
-        None => return Err(Error::Model(ModelError::MemberNotFound)),
-    };
-
-    let perms = guild.user_permissions_in(&guild_channel, member)?;
-
-    permissions.remove(perms);
-
-    Ok(permissions.is_empty())
 }
 
 /// Deserializes a sequence and builds a `HashMap` with the key extraction function.

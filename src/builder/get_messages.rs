@@ -1,97 +1,134 @@
-use std::collections::HashMap;
-
-use crate::model::id::MessageId;
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::{CacheHttp, MessagePagination};
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
 /// Builds a request to the API to retrieve messages.
 ///
-/// This can have 2 different sets of parameters. The first set is around where
-/// to get the messages:
+/// This accepts 2 types of parameters. The first type filters messages based on Id, and is set by
+/// one of the following:
 ///
 /// - [`Self::after`]
 /// - [`Self::around`]
 /// - [`Self::before`]
 ///
-/// These can not be mixed, and the first in the list alphabetically will be
-/// used. If one is not specified, `most_recent` will be used.
+/// These are mutually exclusive, and override each other if called sequentially. If one is not
+/// specified, messages are simply sorted by most recent.
 ///
-/// The fourth parameter is to specify the number of messages to retrieve. This
-/// does not _need_ to be called and defaults to a value of 50.
+/// The other parameter specifies the number of messages fo retrieve. This is _optional_, and
+/// defaults to 50 if not specified.
 ///
-/// This should be used only for retrieving messages; see
-/// [`GuildChannel::messages`] for examples.
+/// See [`GuildChannel::messages`] for more examples.
 ///
 /// # Examples
 ///
-/// Creating a [`GetMessages`] builder to retrieve the first 25 messages after the
-/// message with an Id of `158339864557912064`:
+/// Creating a [`GetMessages`] builder to retrieve the first 25 messages after the message with an
+/// Id of `158339864557912064`:
 ///
 /// ```rust,no_run
 /// # use serenity::http::Http;
 /// #
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-/// # let http = Http::new("token");
+/// # let http: Http = unimplemented!();
+/// use serenity::builder::GetMessages;
 /// use serenity::model::id::{ChannelId, MessageId};
 ///
 /// // you can then pass it into a function which retrieves messages:
-/// let channel_id = ChannelId(81384788765712384);
+/// let channel_id = ChannelId::new(81384788765712384);
 ///
-/// let _messages = channel_id
-///     .messages(&http, |retriever| retriever.after(MessageId(158339864557912064)).limit(25))
-///     .await?;
-/// #     Ok(())
+/// let builder = GetMessages::new().after(MessageId::new(158339864557912064)).limit(25);
+/// let _messages = channel_id.messages(&http, builder).await?;
+/// # Ok(())
 /// # }
 /// ```
 ///
-/// [`GuildChannel::messages`]: crate::model::channel::GuildChannel::messages
-#[derive(Clone, Debug, Default)]
-pub struct GetMessages(pub HashMap<&'static str, u64>);
+/// [Discord docs](https://discord.com/developers/docs/resources/channel#get-channel-messages)
+#[derive(Clone, Copy, Debug, Default)]
+#[must_use]
+pub struct GetMessages {
+    search_filter: Option<SearchFilter>,
+    limit: Option<u8>,
+}
 
 impl GetMessages {
-    /// Indicates to retrieve the messages after a specific message, given by
-    /// its Id.
-    #[inline]
-    pub fn after<M: Into<MessageId>>(&mut self, message_id: M) -> &mut Self {
-        self._after(message_id.into());
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Indicates to retrieve the messages after a specific message, given its Id.
+    pub fn after(mut self, message_id: impl Into<MessageId>) -> Self {
+        self.search_filter = Some(SearchFilter::After(message_id.into()));
         self
     }
 
-    fn _after(&mut self, message_id: MessageId) {
-        self.0.insert("after", message_id.0);
-    }
-
-    /// Indicates to retrieve the messages _around_ a specific message in either
-    /// direction (before+after) the given message.
-    #[inline]
-    pub fn around<M: Into<MessageId>>(&mut self, message_id: M) -> &mut Self {
-        self._around(message_id.into());
+    /// Indicates to retrieve the messages _around_ a specific message, in other words in either
+    /// direction from the message in time.
+    pub fn around(mut self, message_id: impl Into<MessageId>) -> Self {
+        self.search_filter = Some(SearchFilter::Around(message_id.into()));
         self
     }
 
-    fn _around(&mut self, message_id: MessageId) {
-        self.0.insert("around", message_id.0);
-    }
-
-    /// Indicates to retrieve the messages before a specific message, given by
-    /// its Id.
-    #[inline]
-    pub fn before<M: Into<MessageId>>(&mut self, message_id: M) -> &mut Self {
-        self._before(message_id.into());
+    /// Indicates to retrieve the messages before a specific message, given its Id.
+    pub fn before(mut self, message_id: impl Into<MessageId>) -> Self {
+        self.search_filter = Some(SearchFilter::Before(message_id.into()));
         self
-    }
-
-    fn _before(&mut self, message_id: MessageId) {
-        self.0.insert("before", message_id.0);
     }
 
     /// The maximum number of messages to retrieve for the query.
     ///
     /// If this is not specified, a default value of 50 is used.
     ///
-    /// **Note**: This field is capped to 100 messages due to a Discord
-    /// limitation. If an amount larger than 100 is supplied, it will be
-    /// reduced.
-    pub fn limit(&mut self, limit: u64) -> &mut Self {
-        self.0.insert("limit", if limit > 100 { 100 } else { limit });
+    /// **Note**: This field is capped to 100 messages due to a Discord limitation. If an amount
+    /// larger than 100 is supplied, it will be truncated.
+    pub fn limit(mut self, limit: u8) -> Self {
+        self.limit = Some(limit.min(100));
         self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for GetMessages {
+    type Context<'ctx> = ChannelId;
+    type Built = Vec<Message>;
+
+    /// Gets messages from the channel.
+    ///
+    /// **Note**: If the user does not have the [Read Message History] permission, returns an empty
+    /// [`Vec`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Http`] if the current user lacks permission.
+    ///
+    /// [Read Message History]: Permissions::READ_MESSAGE_HISTORY
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().get_messages(ctx, self.search_filter.map(Into::into), self.limit).await
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SearchFilter {
+    After(MessageId),
+    Around(MessageId),
+    Before(MessageId),
+}
+
+#[cfg(feature = "http")]
+impl From<SearchFilter> for MessagePagination {
+    fn from(filter: SearchFilter) -> Self {
+        match filter {
+            SearchFilter::After(id) => MessagePagination::After(id),
+            SearchFilter::Around(id) => MessagePagination::Around(id),
+            SearchFilter::Before(id) => MessagePagination::Before(id),
+        }
     }
 }

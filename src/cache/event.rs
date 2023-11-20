@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use super::{Cache, CacheUpdate};
-use crate::model::channel::{Channel, GuildChannel, Message};
+use crate::model::channel::{GuildChannel, Message};
 use crate::model::event::{
     ChannelCreateEvent,
     ChannelDeleteEvent,
@@ -18,7 +18,6 @@ use crate::model::event::{
     GuildRoleDeleteEvent,
     GuildRoleUpdateEvent,
     GuildStickersUpdateEvent,
-    GuildUnavailableEvent,
     GuildUpdateEvent,
     MessageCreateEvent,
     MessageUpdateEvent,
@@ -29,132 +28,53 @@ use crate::model::event::{
     ThreadDeleteEvent,
     ThreadUpdateEvent,
     UserUpdateEvent,
+    VoiceChannelStatusUpdateEvent,
     VoiceStateUpdateEvent,
 };
-use crate::model::guild::{Guild, Member, Role};
+use crate::model::gateway::ShardInfo;
+use crate::model::guild::{Guild, GuildMemberFlags, Member, Role};
+use crate::model::id::ShardId;
 use crate::model::user::{CurrentUser, OnlineStatus};
 use crate::model::voice::VoiceState;
 
 impl CacheUpdate for ChannelCreateEvent {
-    type Output = Channel;
+    type Output = GuildChannel;
 
     fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
-        match self.channel {
-            Channel::Guild(ref channel) => {
-                let (guild_id, channel_id) = (channel.guild_id, channel.id);
+        let old_channel = cache
+            .guilds
+            .get_mut(&self.channel.guild_id)
+            .and_then(|mut g| g.channels.insert(self.channel.id, self.channel.clone()));
 
-                let old_channel = cache
-                    .guilds
-                    .get_mut(&guild_id)
-                    .and_then(|mut g| g.channels.insert(channel_id, self.channel.clone()));
-
-                cache.channels.insert(channel_id, channel.clone());
-
-                old_channel
-            },
-            Channel::Private(ref mut channel) => {
-                if let Some(channel) = cache.private_channels.get(&channel.id) {
-                    return Some(Channel::Private(channel.clone()));
-                }
-
-                let id = {
-                    let user_id = {
-                        cache.update_user_entry(&channel.recipient);
-
-                        channel.recipient.id
-                    };
-
-                    if let Some(u) = cache.users.get(&user_id) {
-                        channel.recipient = u.clone();
-                    }
-
-                    channel.id
-                };
-
-                cache.private_channels.insert(id, channel.clone()).map(Channel::Private)
-            },
-            Channel::Category(ref category) => {
-                let (guild_id, channel_id) = (category.guild_id, category.id);
-
-                let old_channel = cache
-                    .guilds
-                    .get_mut(&guild_id)
-                    .and_then(|mut g| g.channels.insert(channel_id, self.channel.clone()));
-
-                cache.categories.insert(channel_id, category.clone());
-
-                old_channel
-            },
-        }
+        cache.channels.insert(self.channel.id, self.channel.guild_id);
+        old_channel
     }
 }
 
 impl CacheUpdate for ChannelDeleteEvent {
-    type Output = ();
+    type Output = Vec<Message>;
 
-    fn update(&mut self, cache: &Cache) -> Option<()> {
-        match self.channel {
-            Channel::Guild(ref channel) => {
-                let (guild_id, channel_id) = (channel.guild_id, channel.id);
+    fn update(&mut self, cache: &Cache) -> Option<Vec<Message>> {
+        let (channel_id, guild_id) = (self.channel.id, self.channel.guild_id);
 
-                cache.channels.remove(&channel_id);
-
-                cache.guilds.get_mut(&guild_id).map(|mut g| g.channels.remove(&channel_id));
-            },
-            Channel::Category(ref category) => {
-                let (guild_id, channel_id) = (category.guild_id, category.id);
-
-                cache.categories.remove(&channel_id);
-
-                cache.guilds.get_mut(&guild_id).map(|mut g| g.channels.remove(&channel_id));
-            },
-            Channel::Private(ref channel) => {
-                let id = { channel.id };
-
-                cache.private_channels.remove(&id);
-            },
-        };
+        cache.channels.remove(&channel_id);
+        cache.guilds.get_mut(&guild_id).map(|mut g| g.channels.remove(&channel_id));
 
         // Remove the cached messages for the channel.
-        cache.messages.remove(&self.channel.id());
-
-        None
+        cache.messages.remove(&channel_id).map(|(_, messages)| messages.into_values().collect())
     }
 }
 
 impl CacheUpdate for ChannelUpdateEvent {
-    type Output = ();
+    type Output = GuildChannel;
 
-    fn update(&mut self, cache: &Cache) -> Option<()> {
-        match self.channel {
-            Channel::Guild(ref channel) => {
-                let (guild_id, channel_id) = (channel.guild_id, channel.id);
+    fn update(&mut self, cache: &Cache) -> Option<GuildChannel> {
+        cache.channels.insert(self.channel.id, self.channel.guild_id);
 
-                cache.channels.insert(channel_id, channel.clone());
-
-                cache
-                    .guilds
-                    .get_mut(&guild_id)
-                    .map(|mut g| g.channels.insert(channel_id, self.channel.clone()));
-            },
-            Channel::Private(ref channel) => {
-                if let Some(mut c) = cache.private_channels.get_mut(&channel.id) {
-                    c.clone_from(channel);
-                }
-            },
-            Channel::Category(ref category) => {
-                let (guild_id, channel_id) = (category.guild_id, category.id);
-
-                cache.categories.insert(channel_id, category.clone());
-
-                cache
-                    .guilds
-                    .get_mut(&guild_id)
-                    .map(|mut g| g.channels.insert(channel_id, self.channel.clone()));
-            },
-        }
-
-        None
+        cache
+            .guilds
+            .get_mut(&self.channel.guild_id)
+            .and_then(|mut g| g.channels.insert(self.channel.id, self.channel.clone()))
     }
 }
 
@@ -162,16 +82,8 @@ impl CacheUpdate for ChannelPinsUpdateEvent {
     type Output = ();
 
     fn update(&mut self, cache: &Cache) -> Option<()> {
-        if let Some(mut channel) = cache.channels.get_mut(&self.channel_id) {
+        if let Some(mut channel) = cache.channel_mut(self.channel_id) {
             channel.last_pin_timestamp = self.last_pin_timestamp;
-
-            return None;
-        }
-
-        if let Some(mut channel) = cache.private_channels.get_mut(&self.channel_id) {
-            channel.last_pin_timestamp = self.last_pin_timestamp;
-
-            return None;
         }
 
         None
@@ -188,23 +100,14 @@ impl CacheUpdate for GuildCreateEvent {
         for (user_id, member) in &mut guild.members {
             cache.update_user_entry(&member.user);
             if let Some(u) = cache.user(user_id) {
-                member.user = u;
-            }
-        }
-
-        for pair in guild.channels.clone() {
-            if let Channel::Guild(channel) = pair.1 {
-                cache.channels.insert(pair.0, channel);
-            }
-        }
-
-        for pair in guild.channels.clone() {
-            if let Channel::Category(category) = pair.1 {
-                cache.categories.insert(pair.0, category);
+                member.user = u.clone();
             }
         }
 
         cache.guilds.insert(self.guild.id, guild);
+        for channel_id in self.guild.channels.keys() {
+            cache.channels.insert(*channel_id, self.guild.id);
+        }
 
         None
     }
@@ -214,23 +117,21 @@ impl CacheUpdate for GuildDeleteEvent {
     type Output = Guild;
 
     fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
+        if self.guild.unavailable {
+            cache.unavailable_guilds.insert(self.guild.id, ());
+            cache.guilds.remove(&self.guild.id);
+
+            return None;
+        }
+
         match cache.guilds.remove(&self.guild.id) {
             Some(guild) => {
-                for (channel_id, channel) in &guild.1.channels {
-                    match channel {
-                        Channel::Guild(_) => {
-                            // Remove the channel from the cache.
-                            cache.channels.remove(channel_id);
+                for channel_id in guild.1.channels.keys() {
+                    // Remove the channel from the cache.
+                    cache.channels.remove(channel_id);
 
-                            // Remove the channel's cached messages.
-                            cache.messages.remove(channel_id);
-                        },
-                        Channel::Category(_) => {
-                            // Remove the category from the cache
-                            cache.categories.remove(channel_id);
-                        },
-                        _ => {},
-                    }
+                    // Remove the channel's cached messages.
+                    cache.messages.remove(channel_id);
                 }
 
                 Some(guild.1)
@@ -259,7 +160,7 @@ impl CacheUpdate for GuildMemberAddEvent {
         let user_id = self.member.user.id;
         cache.update_user_entry(&self.member.user);
         if let Some(u) = cache.user(user_id) {
-            self.member.user = u;
+            self.member.user = u.clone();
         }
 
         if let Some(mut guild) = cache.guilds.get_mut(&self.member.guild_id) {
@@ -322,8 +223,9 @@ impl CacheUpdate for GuildMemberUpdateEvent {
                     pending: self.pending,
                     premium_since: self.premium_since,
                     permissions: None,
-                    avatar: self.avatar.clone(),
+                    avatar: self.avatar,
                     communication_disabled_until: self.communication_disabled_until,
+                    flags: GuildMemberFlags::default(),
                 });
             }
 
@@ -397,24 +299,12 @@ impl CacheUpdate for GuildStickersUpdateEvent {
     }
 }
 
-impl CacheUpdate for GuildUnavailableEvent {
-    type Output = ();
-
-    fn update(&mut self, cache: &Cache) -> Option<()> {
-        cache.unavailable_guilds.insert(self.guild_id);
-        cache.guilds.remove(&self.guild_id);
-
-        None
-    }
-}
-
 impl CacheUpdate for GuildUpdateEvent {
     type Output = ();
 
     fn update(&mut self, cache: &Cache) -> Option<()> {
         if let Some(mut guild) = cache.guilds.get_mut(&self.guild.id) {
-            guild.afk_channel_id.clone_from(&self.guild.afk_channel_id);
-            guild.afk_timeout = self.guild.afk_timeout;
+            guild.afk_metadata.clone_from(&self.guild.afk_metadata);
             guild.banner.clone_from(&self.guild.banner);
             guild.discovery_splash.clone_from(&self.guild.discovery_splash);
             guild.features.clone_from(&self.guild.features);
@@ -457,10 +347,8 @@ impl CacheUpdate for MessageCreateEvent {
             return None;
         }
 
-        let messages =
-            cache.messages.entry(self.message.channel_id).or_insert_with(Default::default);
-        let mut queue =
-            cache.message_queue.entry(self.message.channel_id).or_insert_with(Default::default);
+        let mut messages = cache.messages.entry(self.message.channel_id).or_default();
+        let mut queue = cache.message_queue.entry(self.message.channel_id).or_default();
 
         let mut removed_msg = None;
 
@@ -473,44 +361,19 @@ impl CacheUpdate for MessageCreateEvent {
         queue.push_back(self.message.id);
         messages.insert(self.message.id, self.message.clone());
 
-        removed_msg.map(|i| i.1)
+        removed_msg
     }
 }
 
 impl CacheUpdate for MessageUpdateEvent {
     type Output = Message;
 
-    #[rustfmt::skip]
     fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
-        // Destructure, so we get an `unused` warning when we forget to process one of the fields
-        // in this method
-        #[allow(deprecated)] // yes rust, exhaustive means exhaustive, even the deprecated ones
-        let Self {
-            id, channel_id, content, edited_timestamp, tts, mention_everyone, mentions,
-            mention_roles, mention_channels, attachments, embeds, reactions, pinned, flags,
-            components, sticker_items,
-
-            author: _, timestamp: _,  nonce: _, kind: _, stickers: _,  guild_id: _,
-        } = &self;
-
-        let messages = cache.messages.get_mut(channel_id)?;
-        let mut message = messages.get_mut(id)?;
+        let mut messages = cache.messages.get_mut(&self.channel_id)?;
+        let message = messages.get_mut(&self.id)?;
         let old_message = message.clone();
 
-        if let Some(x) = attachments { message.attachments = x.clone() }
-        if let Some(x) = content { message.content = x.clone() }
-        if let Some(x) = edited_timestamp { message.edited_timestamp = Some(*x) }
-        if let Some(x) = mentions { message.mentions = x.clone() }
-        if let Some(x) = mention_everyone { message.mention_everyone = *x }
-        if let Some(x) = mention_roles { message.mention_roles = x.clone() }
-        if let Some(x) = mention_channels { message.mention_channels = x.clone() }
-        if let Some(x) = pinned { message.pinned = *x }
-        if let Some(x) = flags { message.flags = Some(*x) }
-        if let Some(x) = tts { message.tts = *x }
-        if let Some(x) = embeds { message.embeds = x.clone() }
-        if let Some(x) = reactions { message.reactions = x.clone() }
-        if let Some(x) = components { message.components = x.clone() }
-        if let Some(x) = sticker_items { message.sticker_items = x.clone() }
+        self.apply_to_message(message);
 
         Some(old_message)
     }
@@ -525,7 +388,7 @@ impl CacheUpdate for PresenceUpdateEvent {
         }
 
         if let Some(user) = cache.user(self.presence.user.id) {
-            self.presence.user.update_with_user(user);
+            self.presence.user.update_with_user(&user);
         }
 
         if let Some(guild_id) = self.presence.guild_id {
@@ -537,8 +400,7 @@ impl CacheUpdate for PresenceUpdateEvent {
                     guild.presences.insert(self.presence.user.id, self.presence.clone());
                 }
 
-                // Create a partial member instance out of the presence update
-                // data.
+                // Create a partial member instance out of the presence update data.
                 if let Some(user) = self.presence.user.to_user() {
                     guild.members.entry(self.presence.user.id).or_insert_with(|| Member {
                         deaf: false,
@@ -553,13 +415,10 @@ impl CacheUpdate for PresenceUpdateEvent {
                         permissions: None,
                         avatar: None,
                         communication_disabled_until: None,
+                        flags: GuildMemberFlags::default(),
                     });
                 }
             }
-        } else if self.presence.status == OnlineStatus::Offline {
-            cache.presences.remove(&self.presence.user.id);
-        } else {
-            cache.presences.insert(self.presence.user.id, self.presence.clone());
         }
 
         None
@@ -582,22 +441,23 @@ impl CacheUpdate for ReadyEvent {
     type Output = ();
 
     fn update(&mut self, cache: &Cache) -> Option<()> {
-        let mut ready = self.ready.clone();
+        let ready = self.ready.clone();
 
         for unavailable in ready.guilds {
             cache.guilds.remove(&unavailable.id);
-            cache.unavailable_guilds.insert(unavailable.id);
+            cache.unavailable_guilds.insert(unavailable.id, ());
         }
 
-        // We may be removed from some guilds between disconnect and ready, so we should handle that.
+        // We may be removed from some guilds between disconnect and ready, so handle that.
         let mut guilds_to_remove = vec![];
         let ready_guilds_hashset =
             self.ready.guilds.iter().map(|status| status.id).collect::<HashSet<_>>();
-        let shard_data = self.ready.shard.unwrap_or([1, 1]);
+        let shard_data = self.ready.shard.unwrap_or_else(|| ShardInfo::new(ShardId(1), 1));
+
         for guild_entry in cache.guilds.iter() {
             let guild = guild_entry.key();
             // Only handle data for our shard.
-            if crate::utils::shard_id(guild.0, shard_data[1]) == shard_data[0]
+            if crate::utils::shard_id(*guild, shard_data.total) == shard_data.id.0
                 && !ready_guilds_hashset.contains(guild)
             {
                 guilds_to_remove.push(*guild);
@@ -609,21 +469,11 @@ impl CacheUpdate for ReadyEvent {
             }
         }
 
-        // `ready.private_channels` will always be empty, and possibly be removed in the future.
-        // So don't handle it at all.
-
-        for (user_id, presence) in &mut ready.presences {
-            if let Some(user) = presence.user.to_user() {
-                cache.update_user_entry(&user);
-            }
-            if let Some(user) = cache.user(user_id) {
-                presence.user.update_with_user(user);
-            }
-
-            cache.presences.insert(*user_id, presence.clone());
+        {
+            let mut cached_shard_data = cache.shard_data.write();
+            cached_shard_data.total = shard_data.total;
+            cached_shard_data.connected.insert(shard_data.id);
         }
-
-        *cache.shard_count.write() = ready.shard.map_or(1, |s| s[1]);
         *cache.user.write() = ready.user;
 
         None
@@ -705,6 +555,22 @@ impl CacheUpdate for VoiceStateUpdateEvent {
             } else {
                 None
             }
+        } else {
+            None
+        }
+    }
+}
+
+impl CacheUpdate for VoiceChannelStatusUpdateEvent {
+    type Output = String;
+
+    fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
+        if let Some(mut channel) = cache.channel_mut(self.id) {
+            let old = channel.status.clone();
+            channel.status = self.status.clone();
+            // Discord updates topic but doesn't fire ChannelUpdate.
+            channel.topic = self.status.clone();
+            old
         } else {
             None
         }

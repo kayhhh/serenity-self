@@ -1,12 +1,11 @@
-//! This example will showcase the beauty of collectors.
-//! They allow to await messages or reactions from a user in the middle
-//! of a control flow, one being a command.
+//! This example will showcase the beauty of collectors. They allow to await messages or reactions
+//! from a user in the middle of a control flow, one being a command.
 use std::collections::HashSet;
 use std::env;
 use std::time::Duration;
 
 use serenity::async_trait;
-use serenity::collector::{EventCollectorBuilder, MessageCollectorBuilder};
+use serenity::collector::MessageCollector;
 use serenity::framework::standard::macros::{command, group, help};
 use serenity::framework::standard::{
     help_commands,
@@ -61,12 +60,11 @@ async fn main() {
         Err(why) => panic!("Could not access user info: {:?}", why),
     };
 
-    let framework = StandardFramework::new()
-        .configure(|c| {
-            c.with_whitespace(true).on_mention(Some(bot_id)).prefix("~").delimiters(vec![", ", ","])
-        })
-        .help(&MY_HELP)
-        .group(&COLLECTOR_GROUP);
+    let framework = StandardFramework::new().help(&MY_HELP).group(&COLLECTOR_GROUP);
+
+    framework.configure(|c| {
+        c.with_whitespace(true).on_mention(Some(bot_id)).prefix("~").delimiters(vec![", ", ","])
+    });
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -80,7 +78,7 @@ async fn main() {
         .expect("Err creating client");
 
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }
 
@@ -89,11 +87,10 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
     let mut score = 0u32;
     let _ = msg.reply(ctx, "How was that crusty crab called again? 10 seconds time!").await;
 
-    // There are methods implemented for some models to conveniently collect replies.
-    // This one returns a future that will await a single message only.
-    // The other method for messages is called `await_replies` and returns a future
-    // which builds a stream to easily handle them.
-    if let Some(answer) = &msg.author.await_reply(ctx).timeout(Duration::from_secs(10)).await {
+    // There is a method implemented for some models to conveniently collect replies. They return a
+    // builder that can be turned into a Stream, or here, where we can await a single reply
+    let collector = msg.author.await_reply(&ctx.shard).timeout(Duration::from_secs(10));
+    if let Some(answer) = collector.await {
         if answer.content.to_lowercase() == "ferris" {
             let _ = answer.reply(ctx, "That's correct!").await;
             score += 1;
@@ -109,27 +106,18 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
         .await
         .unwrap();
 
-    // The message model has a way to collect reactions on it.
-    // Other methods are `await_n_reactions` and `await_all_reactions`.
-    // Same goes for messages!
-    if let Some(reaction) = &react_msg
-        .await_reaction(ctx)
+    // The message model can also be turned into a Collector to collect reactions on it.
+    let collector = react_msg
+        .await_reaction(&ctx.shard)
         .timeout(Duration::from_secs(10))
-        .author_id(msg.author.id)
-        .await
-    {
-        // By default, the collector will collect only added reactions.
-        // We could also pattern-match the reaction in case we want
-        // to handle added or removed reactions.
-        // In this case we will just get the inner reaction.
-        let emoji = &reaction.as_inner_ref().emoji;
+        .author_id(msg.author.id);
 
-        let _ = match emoji.as_data().as_str() {
-            "1️⃣" => {
-                score += 1;
-                msg.reply(ctx, "That's correct!").await
-            },
-            _ => msg.reply(ctx, "Wrong!").await,
+    if let Some(reaction) = collector.await {
+        let _ = if reaction.emoji.as_data() == "1️⃣" {
+            score += 1;
+            msg.reply(ctx, "That's correct!").await
+        } else {
+            msg.reply(ctx, "Wrong!").await
         };
     } else {
         let _ = msg.reply(ctx, "No reaction within 10 seconds.").await;
@@ -138,24 +126,24 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
     let _ = msg.reply(ctx, "Write 5 messages in 10 seconds").await;
 
     // We can create a collector from scratch too using this builder future.
-    let collector = MessageCollectorBuilder::new(ctx)
+    let collector = MessageCollector::new(&ctx.shard)
     // Only collect messages by this user.
         .author_id(msg.author.id)
         .channel_id(msg.channel_id)
-        .collect_limit(5u32)
         .timeout(Duration::from_secs(10))
-    // Build the collector.
-        .build();
+        // Build the collector.
+        .stream()
+        .take(5);
 
     // Let's acquire borrow HTTP to send a message inside the `async move`.
     let http = &ctx.http;
 
-    // We want to process each message and get the length.
-    // There are a couple of ways to do this. Folding the stream with `fold`
-    // is one way.
-    // Using `then` to first reply and then create a new stream with all
-    // messages is another way to do it, which can be nice if you want
-    // to further process the messages.
+    // We want to process each message and get the length. There are a couple of ways to do this.
+    // Folding the stream with `fold` is one way.
+    //
+    // Using `then` to first reply and then create a new stream with all messages is another way to
+    // do it, which can be nice if you want to further process the messages.
+    //
     // If you don't want to collect the stream, `for_each` may be sufficient.
     let collected: Vec<_> = collector
         .then(|msg| async move {
@@ -170,25 +158,22 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
         score += 1;
     }
 
-    // We can also collect arbitrary events using the generic EventCollector. For example, here we
-    // collect updates to the messages that the user sent above and check for them updating all 5 of
-    // them.
-    let builder = EventCollectorBuilder::new(ctx)
-        .add_event_type(EventType::MessageUpdate)
-        .timeout(Duration::from_secs(20));
-    // Only collect MessageUpdate events for the 5 MessageIds we're interested in.
-    let mut collector =
-        collected.iter().fold(builder, |b, msg| b.add_message_id(msg.id)).build()?;
+    // We can also collect arbitrary events using the collect() function. For example, here we
+    // collect updates to the messages that the user sent above and check for them updating all 5
+    // of them.
+    let mut collector = serenity::collector::collect(&ctx.shard, move |event| match event {
+        // Only collect MessageUpdate events for the 5 MessageIds we're interested in.
+        Event::MessageUpdate(event) if collected.iter().any(|msg| event.id == msg.id) => {
+            Some(event.id)
+        },
+        _ => None,
+    })
+    .take_until(Box::pin(tokio::time::sleep(Duration::from_secs(20))));
 
     let _ = msg.reply(ctx, "Edit each of those 5 messages in 20 seconds").await;
     let mut edited = HashSet::new();
-    while let Some(event) = collector.next().await {
-        match event.as_ref() {
-            Event::MessageUpdate(e) => {
-                edited.insert(e.id);
-            },
-            e => panic!("Unexpected event type received: {:?}", e.event_type()),
-        }
+    while let Some(edited_message_id) = collector.next().await {
+        edited.insert(edited_message_id);
         if edited.len() >= 5 {
             break;
         }
@@ -202,7 +187,7 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
     }
 
     let _ = msg
-        .reply(ctx, &format!("TIME'S UP! You completed {} out of 4 tasks correctly!", score))
+        .reply(ctx, &format!("TIME'S UP! You completed {score} out of 4 tasks correctly!"))
         .await;
 
     Ok(())

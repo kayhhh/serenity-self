@@ -1,454 +1,404 @@
-use std::collections::HashMap;
+use serde::Serialize;
 
-use crate::internal::prelude::*;
-use crate::json::{self, from_number, Value};
-use crate::model::application::component::{ButtonStyle, InputTextStyle};
-use crate::model::channel::ReactionType;
+use crate::json::{self, json};
+use crate::model::prelude::*;
 
-/// A builder for creating several [`ActionRow`]s.
+/// A builder for creating a components action row in a message.
 ///
-/// [`ActionRow`]: crate::model::application::component::ActionRow
-#[derive(Clone, Debug, Default)]
-pub struct CreateComponents(pub Vec<Value>);
-
-impl CreateComponents {
-    /// Creates an action row.
-    pub fn create_action_row<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateActionRow) -> &mut CreateActionRow,
-    {
-        let mut data = CreateActionRow::default();
-        f(&mut data);
-
-        self.add_action_row(data);
-
-        self
-    }
-
-    /// Adds an action row.
-    pub fn add_action_row(&mut self, mut row: CreateActionRow) -> &mut Self {
-        self.0.push(row.build());
-
-        self
-    }
-
-    /// Set a single action row.
-    /// Calling this will overwrite all action rows.
-    pub fn set_action_row(&mut self, mut row: CreateActionRow) -> &mut Self {
-        self.0 = vec![row.build()];
-
-        self
-    }
-
-    /// Sets all the action rows.
-    pub fn set_action_rows(&mut self, rows: Vec<CreateActionRow>) -> &mut Self {
-        let new_rows = rows.into_iter().map(|mut f| f.build());
-
-        for row in new_rows {
-            self.0.push(row);
-        }
-
-        self
-    }
-}
-
-/// A builder for creating an [`ActionRow`].
-///
-/// [`ActionRow`]: crate::model::application::component::ActionRow
-#[derive(Clone, Debug, Default)]
-pub struct CreateActionRow(pub HashMap<&'static str, Value>);
-
-impl CreateActionRow {
-    /// Creates a button.
-    pub fn create_button<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateButton) -> &mut CreateButton,
-    {
-        let mut data = CreateButton::default();
-        f(&mut data);
-
-        self.add_button(data);
-
-        self
-    }
-
-    /// Adds a button.
-    pub fn add_button(&mut self, button: CreateButton) -> &mut Self {
-        let components =
-            self.0.entry("components").or_insert_with(|| Value::from(Vec::<Value>::new()));
-        let components_array = components.as_array_mut().expect("Must be an array");
-
-        components_array.push(button.build());
-
-        self
-    }
-
-    /// Creates a select menu.
-    pub fn create_select_menu<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateSelectMenu) -> &mut CreateSelectMenu,
-    {
-        let mut data = CreateSelectMenu::default();
-        f(&mut data);
-
-        self.add_select_menu(data);
-
-        self
-    }
-
-    /// Adds a select menu.
-    pub fn add_select_menu(&mut self, menu: CreateSelectMenu) -> &mut Self {
-        let components =
-            self.0.entry("components").or_insert_with(|| Value::from(Vec::<Value>::new()));
-        let components_array = components.as_array_mut().expect("Must be an array");
-
-        components_array.push(menu.build());
-
-        self
-    }
-
-    /// Creates an input text.
-    pub fn create_input_text<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateInputText) -> &mut CreateInputText,
-    {
-        let mut data = CreateInputText::default();
-        f(&mut data);
-
-        self.add_input_text(data);
-
-        self
-    }
-
-    /// Adds an input text.
-    pub fn add_input_text(&mut self, input_text: CreateInputText) -> &mut Self {
-        let components =
-            self.0.entry("components").or_insert_with(|| Value::from(Vec::<Value>::new()));
-        let components_array = components.as_array_mut().expect("Must be an array");
-
-        components_array.push(input_text.build());
-
-        self
-    }
-
-    pub fn build(&mut self) -> Value {
-        self.0.insert("type", from_number(1_u8));
-
-        json::hashmap_to_json_map(self.0.clone()).into()
-    }
-}
-
-/// A builder for creating a [`Button`].
-///
-/// [`Button`]: crate::model::application::component::Button
+/// [Discord docs](https://discord.com/developers/docs/interactions/message-components#component-object).
 #[derive(Clone, Debug)]
-pub struct CreateButton(pub HashMap<&'static str, Value>);
+#[must_use]
+pub enum CreateActionRow {
+    Buttons(Vec<CreateButton>),
+    SelectMenu(CreateSelectMenu),
+    /// Only valid in modals!
+    InputText(CreateInputText),
+}
 
-impl Default for CreateButton {
-    /// Creates a primary button.
-    fn default() -> Self {
-        let mut btn = Self(HashMap::new());
-        btn.style(ButtonStyle::Primary);
-        btn
+impl serde::Serialize for CreateActionRow {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::Error as _;
+
+        json!({
+            "type": 1,
+            "components": match self {
+                Self::Buttons(x) => json::to_value(x).map_err(S::Error::custom)?,
+                Self::SelectMenu(x) => json::to_value(vec![x]).map_err(S::Error::custom)?,
+                Self::InputText(x) => json::to_value(vec![x]).map_err(S::Error::custom)?,
+            }
+        })
+        .serialize(serializer)
     }
 }
+
+/// A builder for creating a button component in a message
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateButton(Button);
 
 impl CreateButton {
-    /// Sets the style of the button.
-    pub fn style(&mut self, kind: ButtonStyle) -> &mut Self {
-        self.0.insert("style", from_number(kind as u8));
+    /// Creates a link button to the given URL. You must also set [`Self::label`] and/or
+    /// [`Self::emoji`] after this.
+    ///
+    /// Clicking this button _will not_ trigger an interaction event in your bot.
+    pub fn new_link(url: impl Into<String>) -> Self {
+        Self(Button {
+            kind: ComponentType::Button,
+            data: ButtonKind::Link {
+                url: url.into(),
+            },
+            label: None,
+            emoji: None,
+            disabled: false,
+        })
+    }
+
+    /// Creates a normal button with the given custom ID. You must also set [`Self::label`] and/or
+    /// [`Self::emoji`] after this.
+    ///
+    /// Clicking this button will not trigger an interaction event in your bot.
+    pub fn new(custom_id: impl Into<String>) -> Self {
+        Self(Button {
+            kind: ComponentType::Button,
+            data: ButtonKind::NonLink {
+                style: ButtonStyle::Primary,
+                custom_id: custom_id.into(),
+            },
+            label: None,
+            emoji: None,
+            disabled: false,
+        })
+    }
+
+    /// Sets the custom id of the button, a developer-defined identifier. Replaces the current
+    /// value as set in [`Self::new`].
+    ///
+    /// Has no effect on link buttons.
+    pub fn custom_id(mut self, id: impl Into<String>) -> Self {
+        if let ButtonKind::NonLink {
+            custom_id, ..
+        } = &mut self.0.data
+        {
+            *custom_id = id.into();
+        }
         self
     }
 
-    /// The label of the button.
-    pub fn label<D: ToString>(&mut self, label: D) -> &mut Self {
-        self.0.insert("label", Value::from(label.to_string()));
+    /// Sets the style of this button.
+    ///
+    /// Has no effect on link buttons.
+    pub fn style(mut self, new_style: ButtonStyle) -> Self {
+        if let ButtonKind::NonLink {
+            style, ..
+        } = &mut self.0.data
+        {
+            *style = new_style;
+        }
         self
     }
 
-    /// Sets the custom id of the button, a developer-defined identifier.
-    pub fn custom_id<D: ToString>(&mut self, id: D) -> &mut Self {
-        self.0.insert("custom_id", Value::from(id.to_string()));
-        self
-    }
-
-    /// The url for url style button.
-    pub fn url<D: ToString>(&mut self, url: D) -> &mut Self {
-        self.0.insert("url", Value::from(url.to_string()));
+    /// Sets label of the button.
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.0.label = Some(label.into());
         self
     }
 
     /// Sets emoji of the button.
-    pub fn emoji<R: Into<ReactionType>>(&mut self, emoji: R) -> &mut Self {
-        self._emoji(emoji.into())
-    }
-
-    fn _emoji(&mut self, emoji: ReactionType) -> &mut Self {
-        let mut map = JsonMap::new();
-
-        match emoji {
-            ReactionType::Unicode(u) => {
-                map.insert("name".to_string(), Value::from(u));
-            },
-            ReactionType::Custom {
-                animated,
-                id,
-                name,
-            } => {
-                map.insert("animated".to_string(), Value::from(animated));
-                map.insert("id".to_string(), Value::from(id.to_string()));
-
-                if let Some(name) = name {
-                    map.insert("name".to_string(), Value::from(name));
-                }
-            },
-        };
-
-        self.0.insert("emoji", Value::from(map));
+    pub fn emoji(mut self, emoji: impl Into<ReactionType>) -> Self {
+        self.0.emoji = Some(emoji.into());
         self
     }
 
     /// Sets the disabled state for the button.
-    pub fn disabled(&mut self, disabled: bool) -> &mut Self {
-        self.0.insert("disabled", Value::from(disabled));
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.0.disabled = disabled;
         self
-    }
-
-    #[must_use]
-    pub fn build(mut self) -> Value {
-        self.0.insert("type", from_number(2_u8));
-
-        json::hashmap_to_json_map(self.0.clone()).into()
     }
 }
 
-/// A builder for creating a [`SelectMenu`].
+struct CreateSelectMenuDefault(Mention);
+
+impl Serialize for CreateSelectMenuDefault {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (id, kind) = match self.0 {
+            Mention::Channel(c) => (c.get(), "channel"),
+            Mention::Role(r) => (r.get(), "role"),
+            Mention::User(u) => (u.get(), "user"),
+        };
+        json!({"id": id, "type": kind}).serialize(serializer)
+    }
+}
+
+/// [Discord docs](https://discord.com/developers/docs/interactions/message-components#select-menu-object-select-menu-structure).
+#[derive(Clone, Debug)]
+pub enum CreateSelectMenuKind {
+    String { options: Vec<CreateSelectMenuOption> },
+    User { default_users: Option<Vec<UserId>> },
+    Role { default_roles: Option<Vec<RoleId>> },
+    Mentionable { default_users: Option<Vec<UserId>>, default_roles: Option<Vec<RoleId>> },
+    Channel { channel_types: Option<Vec<ChannelType>>, default_channels: Option<Vec<ChannelId>> },
+}
+
+impl Serialize for CreateSelectMenuKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Json<'a> {
+            #[serde(rename = "type")]
+            kind: u8,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            options: Option<&'a [CreateSelectMenuOption]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            channel_types: Option<&'a [ChannelType]>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            default_values: Vec<CreateSelectMenuDefault>,
+        }
+
+        fn map<I: Into<Mention> + Copy>(
+            values: &Option<Vec<I>>,
+        ) -> impl Iterator<Item = CreateSelectMenuDefault> + '_ {
+            // Calling `.iter().flatten()` on the `Option` treats `None` like an empty vec
+            values.iter().flatten().map(|&i| CreateSelectMenuDefault(i.into()))
+        }
+
+        #[rustfmt::skip]
+        let default_values = match self {
+            Self::String { .. } => vec![],
+            Self::User { default_users: default_values } => map(default_values).collect(),
+            Self::Role { default_roles: default_values } => map(default_values).collect(),
+            Self::Mentionable { default_users, default_roles } => {
+                let users = map(default_users);
+                let roles = map(default_roles);
+                users.chain(roles).collect()
+            },
+            Self::Channel { channel_types: _, default_channels: default_values } => map(default_values).collect(),
+        };
+
+        #[rustfmt::skip]
+        let json = Json {
+            kind: match self {
+                Self::String { .. } => 3,
+                Self::User { .. } => 5,
+                Self::Role { .. } => 6,
+                Self::Mentionable { .. } => 7,
+                Self::Channel { .. } => 8,
+            },
+            options: match self {
+                Self::String { options } => Some(options),
+                _ => None,
+            },
+            channel_types: match self {
+                Self::Channel { channel_types, default_channels: _ } => channel_types.as_deref(),
+                _ => None,
+            },
+            default_values,
+        };
+
+        json.serialize(serializer)
+    }
+}
+
+/// A builder for creating a select menu component in a message
 ///
-/// [`SelectMenu`]: crate::model::application::component::SelectMenu
-#[derive(Clone, Debug, Default)]
-pub struct CreateSelectMenu(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/interactions/message-components#select-menu-object-select-menu-structure).
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateSelectMenu {
+    custom_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    placeholder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min_values: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_values: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    disabled: Option<bool>,
+
+    #[serde(flatten)]
+    kind: CreateSelectMenuKind,
+}
 
 impl CreateSelectMenu {
+    /// Creates a builder with given custom id (a developer-defined identifier), and a list of
+    /// options, leaving all other fields empty.
+    pub fn new(custom_id: impl Into<String>, kind: CreateSelectMenuKind) -> Self {
+        Self {
+            custom_id: custom_id.into(),
+            placeholder: None,
+            min_values: None,
+            max_values: None,
+            disabled: None,
+            kind,
+        }
+    }
+
     /// The placeholder of the select menu.
-    pub fn placeholder<D: ToString>(&mut self, label: D) -> &mut Self {
-        self.0.insert("placeholder", Value::from(label.to_string()));
+    pub fn placeholder(mut self, label: impl Into<String>) -> Self {
+        self.placeholder = Some(label.into());
         self
     }
 
-    /// Sets the custom id of the select menu, a developer-defined identifier.
-    pub fn custom_id<D: ToString>(&mut self, id: D) -> &mut Self {
-        self.0.insert("custom_id", Value::from(id.to_string()));
+    /// Sets the custom id of the select menu, a developer-defined identifier. Replaces the current
+    /// value as set in [`Self::new`].
+    pub fn custom_id(mut self, id: impl Into<String>) -> Self {
+        self.custom_id = id.into();
         self
     }
 
     /// Sets the minimum values for the user to select.
-    pub fn min_values(&mut self, min: u64) -> &mut Self {
-        self.0.insert("min_values", from_number(min));
+    pub fn min_values(mut self, min: u8) -> Self {
+        self.min_values = Some(min);
         self
     }
 
     /// Sets the maximum values for the user to select.
-    pub fn max_values(&mut self, max: u64) -> &mut Self {
-        self.0.insert("max_values", from_number(max));
+    pub fn max_values(mut self, max: u8) -> Self {
+        self.max_values = Some(max);
         self
     }
 
     /// Sets the disabled state for the button.
-    pub fn disabled(&mut self, disabled: bool) -> &mut Self {
-        self.0.insert("disabled", Value::from(disabled));
-        self
-    }
-
-    pub fn options<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateSelectMenuOptions) -> &mut CreateSelectMenuOptions,
-    {
-        let mut data = CreateSelectMenuOptions::default();
-        f(&mut data);
-
-        self.0.insert("options", Value::from(data.0));
-
-        self
-    }
-
-    #[must_use]
-    pub fn build(mut self) -> Value {
-        self.0.insert("type", from_number(3_u8));
-
-        json::hashmap_to_json_map(self.0.clone()).into()
-    }
-}
-
-/// A builder for creating several [`SelectMenuOption`].
-///
-/// [`SelectMenuOption`]: crate::model::application::component::SelectMenuOption
-#[derive(Clone, Debug, Default)]
-pub struct CreateSelectMenuOptions(pub Vec<Value>);
-
-impl CreateSelectMenuOptions {
-    /// Creates an option.
-    pub fn create_option<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateSelectMenuOption) -> &mut CreateSelectMenuOption,
-    {
-        let mut data = CreateSelectMenuOption::default();
-        f(&mut data);
-
-        self.add_option(data);
-
-        self
-    }
-
-    /// Adds an option.
-    pub fn add_option(&mut self, option: CreateSelectMenuOption) -> &mut Self {
-        let data = json::hashmap_to_json_map(option.0);
-
-        self.0.push(data.into());
-
-        self
-    }
-
-    /// Sets all the options.
-    pub fn set_options(&mut self, options: Vec<CreateSelectMenuOption>) -> &mut Self {
-        let new_options =
-            options.into_iter().map(|option| json::hashmap_to_json_map(option.0).into());
-
-        for option in new_options {
-            self.0.push(option);
-        }
-
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
         self
     }
 }
 
-/// A builder for creating a [`SelectMenuOption`].
+/// A builder for creating an option of a select menu component in a message
 ///
-/// [`SelectMenuOption`]: crate::model::application::component::SelectMenuOption
-#[derive(Clone, Debug, Default)]
-pub struct CreateSelectMenuOption(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/interactions/message-components#select-menu-object-select-option-structure)
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateSelectMenuOption {
+    label: String,
+    value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    emoji: Option<ReactionType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default: Option<bool>,
+}
 
 impl CreateSelectMenuOption {
-    /// Creates an option.
-    pub fn new<L: ToString, V: ToString>(label: L, value: V) -> Self {
-        let mut opt = Self::default();
-        opt.label(label).value(value);
-        opt
+    /// Creates a select menu option with the given label and value, leaving all other fields
+    /// empty.
+    pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            value: value.into(),
+            description: None,
+            emoji: None,
+            default: None,
+        }
     }
 
-    /// Sets the label of this option.
-    pub fn label<D: ToString>(&mut self, label: D) -> &mut Self {
-        self.0.insert("label", Value::from(label.to_string()));
+    /// Sets the label of this option, replacing the current value as set in [`Self::new`].
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
         self
     }
 
-    /// Sets the value of this option.
-    pub fn value<D: ToString>(&mut self, value: D) -> &mut Self {
-        self.0.insert("value", Value::from(value.to_string()));
+    /// Sets the value of this option, replacing the current value as set in [`Self::new`].
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
         self
     }
 
     /// Sets the description shown on this option.
-    pub fn description<D: ToString>(&mut self, description: D) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
     /// Sets emoji of the option.
-    pub fn emoji<R: Into<ReactionType>>(&mut self, emoji: R) -> &mut Self {
-        self._emoji(emoji.into())
-    }
-
-    fn _emoji(&mut self, emoji: ReactionType) -> &mut Self {
-        let mut map = JsonMap::new();
-
-        match emoji {
-            ReactionType::Unicode(u) => {
-                map.insert("name".to_string(), Value::from(u));
-            },
-            ReactionType::Custom {
-                animated,
-                id,
-                name,
-            } => {
-                map.insert("animated".to_string(), Value::from(animated));
-                map.insert("id".to_string(), Value::from(id.to_string()));
-
-                if let Some(name) = name {
-                    map.insert("name".to_string(), Value::from(name));
-                }
-            },
-        };
-
-        self.0.insert("emoji", Value::from(map));
+    pub fn emoji(mut self, emoji: impl Into<ReactionType>) -> Self {
+        self.emoji = Some(emoji.into());
         self
     }
 
     /// Sets this option as selected by default.
-    pub fn default_selection(&mut self, default: bool) -> &mut Self {
-        self.0.insert("default", Value::from(default));
+    pub fn default_selection(mut self, default: bool) -> Self {
+        self.default = Some(default);
         self
     }
 }
 
-/// A builder for creating an [`InputText`].
+/// A builder for creating an input text component in a modal
 ///
-/// [`InputText`]: crate::model::application::component::InputText
-#[derive(Clone, Debug, Default)]
-pub struct CreateInputText(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/interactions/message-components#text-inputs-text-input-structure).
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateInputText(InputText);
 
 impl CreateInputText {
-    /// Sets the custom id of the input text, a developer-defined identifier.
-    pub fn custom_id<D: ToString>(&mut self, id: D) -> &mut Self {
-        self.0.insert("custom_id", Value::from(id.to_string()));
+    /// Creates a text input with the given style, label, and custom id (a developer-defined
+    /// identifier), leaving all other fields empty.
+    pub fn new(
+        style: InputTextStyle,
+        label: impl Into<String>,
+        custom_id: impl Into<String>,
+    ) -> Self {
+        Self(InputText {
+            style: Some(style),
+            label: Some(label.into()),
+            custom_id: custom_id.into(),
+
+            placeholder: None,
+            min_length: None,
+            max_length: None,
+            value: None,
+            required: true,
+
+            kind: ComponentType::InputText,
+        })
+    }
+
+    /// Sets the style of this input text. Replaces the current value as set in [`Self::new`].
+    pub fn style(mut self, kind: InputTextStyle) -> Self {
+        self.0.style = Some(kind);
         self
     }
 
-    /// Sets the style of this input text
-    pub fn style(&mut self, kind: InputTextStyle) -> &mut Self {
-        self.0.insert("style", from_number(kind as u8));
+    /// Sets the label of this input text. Replaces the current value as set in [`Self::new`].
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.0.label = Some(label.into());
         self
     }
 
-    /// Sets the label of this input text.
-    pub fn label<D: ToString>(&mut self, label: D) -> &mut Self {
-        self.0.insert("label", Value::from(label.to_string()));
+    /// Sets the custom id of the input text, a developer-defined identifier. Replaces the current
+    /// value as set in [`Self::new`].
+    pub fn custom_id(mut self, id: impl Into<String>) -> Self {
+        self.0.custom_id = id.into();
         self
     }
 
     /// Sets the placeholder of this input text.
-    pub fn placeholder<D: ToString>(&mut self, label: D) -> &mut Self {
-        self.0.insert("placeholder", Value::from(label.to_string()));
+    pub fn placeholder(mut self, label: impl Into<String>) -> Self {
+        self.0.placeholder = Some(label.into());
         self
     }
 
     /// Sets the minimum length required for the input text
-    pub fn min_length(&mut self, min: u64) -> &mut Self {
-        self.0.insert("min_length", from_number(min));
+    pub fn min_length(mut self, min: u16) -> Self {
+        self.0.min_length = Some(min);
         self
     }
 
     /// Sets the maximum length required for the input text
-    pub fn max_length(&mut self, max: u64) -> &mut Self {
-        self.0.insert("max_length", from_number(max));
+    pub fn max_length(mut self, max: u16) -> Self {
+        self.0.max_length = Some(max);
         self
     }
 
     /// Sets the value of this input text.
-    pub fn value<D: ToString>(&mut self, value: D) -> &mut Self {
-        self.0.insert("value", Value::from(value.to_string()));
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.0.value = Some(value.into());
         self
     }
 
     /// Sets if the input text is required
-    pub fn required(&mut self, required: bool) -> &mut Self {
-        self.0.insert("required", Value::from(required));
+    pub fn required(mut self, required: bool) -> Self {
+        self.0.required = required;
         self
-    }
-
-    #[must_use]
-    pub fn build(mut self) -> Value {
-        self.0.insert("type", from_number(4_u8));
-
-        json::hashmap_to_json_map(self.0.clone()).into()
     }
 }

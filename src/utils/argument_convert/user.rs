@@ -6,11 +6,10 @@ use crate::prelude::*;
 
 /// Error that can be returned from [`User::convert`].
 #[non_exhaustive]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-#[allow(clippy::enum_variant_names)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UserParseError {
-    /// The provided user string failed to parse, or the parsed result cannot be found in the
-    /// guild cache data.
+    /// The provided user string failed to parse, or the parsed result cannot be found in the guild
+    /// cache data.
     NotFoundOrMalformed,
 }
 
@@ -25,34 +24,26 @@ impl fmt::Display for UserParseError {
 }
 
 #[cfg(feature = "cache")]
-fn lookup_by_global_cache(ctx: &Context, s: &str) -> Option<User> {
-    let users = &ctx.cache.users;
+fn lookup_by_global_cache(ctx: impl CacheHttp, s: &str) -> Option<User> {
+    let users = &ctx.cache()?.users;
 
-    let lookup_by_id = || users.get(&UserId(s.parse().ok()?)).map(|u| u.clone());
+    let lookup_by_id = || users.get(&s.parse().ok()?).map(|u| u.clone());
 
-    let lookup_by_mention =
-        || users.get(&UserId(crate::utils::parse_username(s)?)).map(|u| u.clone());
+    let lookup_by_mention = || users.get(&crate::utils::parse_user_mention(s)?).map(|u| u.clone());
 
     let lookup_by_name_and_discrim = || {
         let (name, discrim) = crate::utils::parse_user_tag(s)?;
         users.iter().find_map(|m| {
             let user = m.value();
-            if user.discriminator == discrim && user.name.eq_ignore_ascii_case(name) {
-                Some(user.clone())
-            } else {
-                None
-            }
+            (user.discriminator == discrim && user.name.eq_ignore_ascii_case(name))
+                .then(|| user.clone())
         })
     };
 
     let lookup_by_name = || {
         users.iter().find_map(|m| {
             let user = m.value();
-            if user.name == s {
-                Some(user.clone())
-            } else {
-                None
-            }
+            (user.name == s).then(|| user.clone())
         })
     };
 
@@ -76,27 +67,27 @@ impl ArgumentConvert for User {
     type Err = UserParseError;
 
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         guild_id: Option<GuildId>,
         channel_id: Option<ChannelId>,
         s: &str,
     ) -> Result<Self, Self::Err> {
         // Try to look up in global user cache via a variety of methods
         #[cfg(feature = "cache")]
-        if let Some(user) = lookup_by_global_cache(ctx, s) {
+        if let Some(user) = lookup_by_global_cache(&ctx, s) {
             return Ok(user);
         }
 
         // If not successful, convert as a Member which uses HTTP endpoints instead of cache
-        if let Ok(member) = Member::convert(ctx, guild_id, channel_id, s).await {
+        if let Ok(member) = Member::convert(&ctx, guild_id, channel_id, s).await {
             return Ok(member.user);
         }
 
         // If string is a raw user ID or a mention
-        if let Some(user_id) = s.parse().ok().or_else(|| crate::utils::parse_username(s)) {
-            // Now, we can still try UserId::to_user because it works for all users from all guilds the
-            // bot is joined
-            if let Ok(user) = UserId(user_id).to_user(ctx).await {
+        if let Some(user_id) = s.parse().ok().or_else(|| crate::utils::parse_user_mention(s)) {
+            // Now, we can still try UserId::to_user because it works for all users from all guilds
+            // the bot is joined
+            if let Ok(user) = user_id.to_user(&ctx).await {
                 return Ok(user);
             }
         }

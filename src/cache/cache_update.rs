@@ -2,12 +2,9 @@ use super::Cache;
 
 /// Trait used for updating the cache with a type.
 ///
-/// This may be implemented on a type and used to update the cache via
-/// [`Cache::update`].
+/// This may be implemented on a type and used to update the cache via [`Cache::update`].
 ///
-/// **Info**:
-/// You may not access the fields of the cache, as they are public for the
-/// crate only.
+/// **Info**: You may not access the fields of the cache, as they are public for the crate only.
 ///
 /// # Examples
 ///
@@ -59,7 +56,7 @@ use super::Cache;
 ///                 Some(old_user)
 ///             },
 ///             Entry::Vacant(entry) => {
-///                 // We can convert a [`serde_json::Value`] to a User for test
+///                 // We can convert a [`json::Value`] to a User for test
 ///                 // purposes.
 ///                 let user = from_value::<User>(json!({
 ///                     "id": self.user_id,
@@ -87,7 +84,7 @@ use super::Cache;
 /// let mut update_message = DatabaseUserUpdate {
 ///     user_avatar: None,
 ///     user_discriminator: 6082,
-///     user_id: UserId(379740138303127564),
+///     user_id: UserId::new(379740138303127564),
 ///     user_is_bot: true,
 ///     user_name: "TofuBot".to_owned(),
 /// };

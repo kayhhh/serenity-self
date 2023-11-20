@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "http")]
-use crate::builder::{CreateApplicationCommand, CreateApplicationCommands};
-#[cfg(feature = "http")]
-use crate::http::Http;
-#[cfg(feature = "http")]
+#[cfg(feature = "model")]
+use crate::builder::{Builder, CreateCommand};
+#[cfg(feature = "model")]
+use crate::http::{CacheHttp, Http};
+#[cfg(feature = "model")]
 use crate::internal::prelude::*;
 use crate::json::Value;
-#[cfg(feature = "http")]
-use crate::json::{self, JsonMap};
 use crate::model::channel::ChannelType;
 use crate::model::id::{
     ApplicationId,
@@ -44,14 +42,14 @@ pub struct Command {
     pub name: String,
     /// The localized command name of the selected locale.
     ///
-    /// If the name is localized, either this field or [`Self::name_localizations`]
-    /// is set, depending on which endpoint this data was retrieved from
+    /// If the name is localized, either this field or [`Self::name_localizations`] is set,
+    /// depending on which endpoint this data was retrieved from
     /// ([source](https://discord.com/developers/docs/interactions/application-commands#retrieving-localized-commands)).
     pub name_localized: Option<String>,
     /// All localized command names.
     ///
-    /// If the name is localized, either this field or [`Self::name_localized`]
-    /// is set, depending on which endpoint this data was retrieved from
+    /// If the name is localized, either this field or [`Self::name_localized`] is set, depending
+    /// on which endpoint this data was retrieved from
     /// ([source](https://discord.com/developers/docs/interactions/application-commands#retrieving-localized-commands)).
     pub name_localizations: Option<HashMap<String, String>>,
     /// The command description.
@@ -64,8 +62,8 @@ pub struct Command {
     pub description_localized: Option<String>,
     /// All localized command descriptions.
     ///
-    /// If the description is localized, either this field or [`Self::description_localized`]
-    /// is set, depending on which endpoint this data was retrieved from
+    /// If the description is localized, either this field or [`Self::description_localized`] is
+    /// set, depending on which endpoint this data was retrieved from
     /// ([source](https://discord.com/developers/docs/interactions/application-commands#retrieving-localized-commands)).
     pub description_localizations: Option<HashMap<String, String>>,
     /// The parameters for the command.
@@ -73,27 +71,21 @@ pub struct Command {
     pub options: Vec<CommandOption>,
     /// The default permissions required to execute the command.
     pub default_member_permissions: Option<Permissions>,
-    /// Indicates whether the command is available in DMs with the app, only for globally-scoped commands.
-    /// By default, commands are visible.
+    /// Indicates whether the command is available in DMs with the app, only for globally-scoped
+    /// commands. By default, commands are visible.
     #[serde(default)]
     pub dm_permission: Option<bool>,
-    /// Whether the command is enabled by default when
-    /// the application is added to a guild.
-    #[serde(default = "default_permission_value")]
-    #[deprecated(note = "replaced by `default_member_permissions`")]
-    pub default_permission: bool,
+    /// Indicates whether the command is [age-restricted](https://discord.com/developers/docs/interactions/application-commands#agerestricted-commands),
+    /// defaults to false.
+    #[serde(default)]
+    pub nsfw: bool,
     /// An autoincremented version identifier updated during substantial record changes.
     pub version: CommandVersionId,
 }
 
-fn default_permission_value() -> bool {
-    true
-}
-
-#[cfg(feature = "http")]
+#[cfg(feature = "model")]
 impl Command {
-    /// Creates a global [`Command`],
-    /// overriding an existing one with the same name if it exists.
+    /// Create a global [`Command`], overriding an existing one with the same name if it exists.
     ///
     /// When a created [`Command`] is used, the [`InteractionCreate`] event will be emitted.
     ///
@@ -112,14 +104,13 @@ impl Command {
     /// # use std::sync::Arc;
     /// #
     /// # async fn run() {
-    /// # let http = Arc::new(Http::new("token"));
-    /// use serenity::model::application::command::Command;
+    /// # let http: Arc<Http> = unimplemented!();
+    /// use serenity::builder::CreateCommand;
+    /// use serenity::model::application::Command;
     /// use serenity::model::id::ApplicationId;
     ///
-    /// let _ = Command::create_global_application_command(&http, |command| {
-    ///     command.name("ping").description("A simple ping command")
-    /// })
-    /// .await;
+    /// let builder = CreateCommand::new("ping").description("A simple ping command");
+    /// let _ = Command::create_global_command(&http, builder).await;
     /// # }
     /// ```
     ///
@@ -130,81 +121,55 @@ impl Command {
     /// # use std::sync::Arc;
     /// #
     /// # async fn run() {
-    /// # let http = Arc::new(Http::new("token"));
-    /// use serenity::model::application::command::{Command, CommandOptionType};
+    /// # let http: Arc<Http> = unimplemented!();
+    /// use serenity::builder::{CreateCommand, CreateCommandOption as CreateOption};
+    /// use serenity::model::application::{Command, CommandOptionType};
     /// use serenity::model::id::ApplicationId;
     ///
-    /// let _ = Command::create_global_application_command(&http, |command| {
-    ///     command.name("echo").description("Makes the bot send a message").create_option(|option| {
-    ///         option
-    ///             .name("message")
-    ///             .description("The message to send")
-    ///             .kind(CommandOptionType::String)
-    ///             .required(true)
-    ///     })
-    /// })
-    /// .await;
+    /// let builder =
+    ///     CreateCommand::new("echo").description("Makes the bot send a message").add_option(
+    ///         CreateOption::new(CommandOptionType::String, "message", "The message to send")
+    ///             .required(true),
+    ///     );
+    /// let _ = Command::create_global_command(&http, builder).await;
     /// # }
     /// ```
     ///
     /// # Errors
     ///
-    /// May return an [`Error::Http`] if the [`Command`] is illformed,
-    /// such as if more than 10 [`choices`] are set. See the [API Docs] for further details.
-    ///
-    /// Can also return an [`Error::Json`] if there is an error in deserializing
-    /// the response.
+    /// See [`CreateCommand::execute`] for a list of possible errors.
     ///
     /// [`InteractionCreate`]: crate::client::EventHandler::interaction_create
-    /// [API Docs]: https://discord.com/developers/docs/interactions/slash-commands
-    /// [`choices`]: CommandOption::choices
-    pub async fn create_global_application_command<F>(
-        http: impl AsRef<Http>,
-        f: F,
-    ) -> Result<Command>
-    where
-        F: FnOnce(&mut CreateApplicationCommand) -> &mut CreateApplicationCommand,
-    {
-        let map = Command::build_application_command(f);
-        http.as_ref().create_global_application_command(&Value::from(map)).await
+    pub async fn create_global_command(
+        cache_http: impl CacheHttp,
+        builder: CreateCommand,
+    ) -> Result<Command> {
+        builder.execute(cache_http, (None, None)).await
     }
 
-    /// Overrides all global application commands.
-    ///
-    /// [`create_global_application_command`]: Self::create_global_application_command
+    /// Override all global application commands.
     ///
     /// # Errors
     ///
-    /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn set_global_application_commands<F>(
+    /// Returns the same errors as [`Self::create_global_command`].
+    pub async fn set_global_commands(
         http: impl AsRef<Http>,
-        f: F,
-    ) -> Result<Vec<Command>>
-    where
-        F: FnOnce(&mut CreateApplicationCommands) -> &mut CreateApplicationCommands,
-    {
-        let mut array = CreateApplicationCommands::default();
-
-        f(&mut array);
-
-        http.as_ref().create_global_application_commands(&Value::from(array.0)).await
+        commands: Vec<CreateCommand>,
+    ) -> Result<Vec<Command>> {
+        http.as_ref().create_global_commands(&commands).await
     }
 
-    /// Edits a global command by its Id.
+    /// Edit a global command, given its Id.
     ///
     /// # Errors
     ///
-    /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn edit_global_application_command<F>(
-        http: impl AsRef<Http>,
+    /// See [`CreateCommand::execute`] for a list of possible errors.
+    pub async fn edit_global_command(
+        cache_http: impl CacheHttp,
         command_id: CommandId,
-        f: F,
-    ) -> Result<Command>
-    where
-        F: FnOnce(&mut CreateApplicationCommand) -> &mut CreateApplicationCommand,
-    {
-        let map = Command::build_application_command(f);
-        http.as_ref().edit_global_application_command(command_id.into(), &Value::from(map)).await
+        builder: CreateCommand,
+    ) -> Result<Command> {
+        builder.execute(cache_http, (None, Some(command_id))).await
     }
 
     /// Gets all global commands.
@@ -212,8 +177,8 @@ impl Command {
     /// # Errors
     ///
     /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn get_global_application_commands(http: impl AsRef<Http>) -> Result<Vec<Command>> {
-        http.as_ref().get_global_application_commands().await
+    pub async fn get_global_commands(http: impl AsRef<Http>) -> Result<Vec<Command>> {
+        http.as_ref().get_global_commands().await
     }
 
     /// Gets all global commands with localizations.
@@ -221,10 +186,10 @@ impl Command {
     /// # Errors
     ///
     /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn get_global_application_commands_with_localizations(
+    pub async fn get_global_commands_with_localizations(
         http: impl AsRef<Http>,
     ) -> Result<Vec<Command>> {
-        http.as_ref().get_global_application_commands_with_localizations().await
+        http.as_ref().get_global_commands_with_localizations().await
     }
 
     /// Gets a global command by its Id.
@@ -232,11 +197,11 @@ impl Command {
     /// # Errors
     ///
     /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn get_global_application_command(
+    pub async fn get_global_command(
         http: impl AsRef<Http>,
         command_id: CommandId,
     ) -> Result<Command> {
-        http.as_ref().get_global_application_command(command_id.into()).await
+        http.as_ref().get_global_command(command_id).await
     }
 
     /// Deletes a global command by its Id.
@@ -244,45 +209,28 @@ impl Command {
     /// # Errors
     ///
     /// If there is an error, it will be either [`Error::Http`] or [`Error::Json`].
-    pub async fn delete_global_application_command(
+    pub async fn delete_global_command(
         http: impl AsRef<Http>,
         command_id: CommandId,
     ) -> Result<()> {
-        http.as_ref().delete_global_application_command(command_id.into()).await
+        http.as_ref().delete_global_command(command_id).await
     }
 }
 
-#[cfg(feature = "http")]
-impl Command {
-    #[inline]
-    pub(crate) fn build_application_command<F>(f: F) -> JsonMap
-    where
-        F: FnOnce(&mut CreateApplicationCommand) -> &mut CreateApplicationCommand,
-    {
-        let mut create_application_command = CreateApplicationCommand::default();
-        f(&mut create_application_command);
-        json::hashmap_to_json_map(create_application_command.0)
+enum_number! {
+    /// The type of an application command.
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-types).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum CommandType {
+        ChatInput = 1,
+        User = 2,
+        Message = 3,
+        _ => Unknown(u8),
     }
 }
-
-/// The type of an application command.
-///
-/// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-types).
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum CommandType {
-    ChatInput = 1,
-    User = 2,
-    Message = 3,
-    Unknown = !0,
-}
-
-enum_number!(CommandType {
-    ChatInput,
-    User,
-    Message
-});
 
 /// The parameters for an [`Command`].
 ///
@@ -343,40 +291,28 @@ pub struct CommandOption {
     pub autocomplete: bool,
 }
 
-/// The type of an [`CommandOption`].
-///
-/// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-type).
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum CommandOptionType {
-    SubCommand = 1,
-    SubCommandGroup = 2,
-    String = 3,
-    Integer = 4,
-    Boolean = 5,
-    User = 6,
-    Channel = 7,
-    Role = 8,
-    Mentionable = 9,
-    Number = 10,
-    Attachment = 11,
-    Unknown = !0,
+enum_number! {
+    /// The type of an [`CommandOption`].
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-type).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum CommandOptionType {
+        SubCommand = 1,
+        SubCommandGroup = 2,
+        String = 3,
+        Integer = 4,
+        Boolean = 5,
+        User = 6,
+        Channel = 7,
+        Role = 8,
+        Mentionable = 9,
+        Number = 10,
+        Attachment = 11,
+        _ => Unknown(u8),
+    }
 }
-
-enum_number!(CommandOptionType {
-    SubCommand,
-    SubCommandGroup,
-    String,
-    Integer,
-    Boolean,
-    User,
-    Channel,
-    Role,
-    Mentionable,
-    Number,
-    Attachment
-});
 
 /// The only valid values a user can pick in an [`CommandOption`].
 ///
@@ -398,7 +334,7 @@ pub struct CommandOptionChoice {
 /// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-permissions-object-guild-application-command-permissions-structure).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
-pub struct CommandPermission {
+pub struct CommandPermissions {
     /// The id of the command.
     pub id: CommandId,
     /// The id of the application the command belongs to.
@@ -406,7 +342,7 @@ pub struct CommandPermission {
     /// The id of the guild.
     pub guild_id: GuildId,
     /// The permissions for the command in the guild.
-    pub permissions: Vec<CommandPermissionData>,
+    pub permissions: Vec<CommandPermission>,
 }
 
 /// The [`CommandPermission`] data.
@@ -414,7 +350,7 @@ pub struct CommandPermission {
 /// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-permissions-object-application-command-permissions-structure).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
-pub struct CommandPermissionData {
+pub struct CommandPermission {
     /// The [`RoleId`] or [`UserId`], depends on `kind` value.
     pub id: CommandPermissionId,
     /// The type of data this permissions applies to.
@@ -424,71 +360,55 @@ pub struct CommandPermissionData {
     pub permission: bool,
 }
 
-/// The type of an [`CommandPermissionData`].
-///
-/// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-permissions-object-application-command-permission-type).
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum CommandPermissionType {
-    Role = 1,
-    User = 2,
-    Channel = 3,
-    Unknown = !0,
+enum_number! {
+    /// The type of a [`CommandPermission`].
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/interactions/application-commands#application-command-permissions-object-application-command-permission-type).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum CommandPermissionType {
+        Role = 1,
+        User = 2,
+        Channel = 3,
+        _ => Unknown(u8),
+    }
 }
-
-enum_number!(CommandPermissionType {
-    Role,
-    User,
-    Channel
-});
 
 impl CommandPermissionId {
     /// Converts this [`CommandPermissionId`] to [`UserId`].
     #[must_use]
     pub fn to_user_id(self) -> UserId {
-        self.0.into()
+        self.into()
     }
 
     /// Converts this [`CommandPermissionId`] to [`RoleId`].
     #[must_use]
     pub fn to_role_id(self) -> RoleId {
-        self.0.into()
+        self.into()
     }
 }
 
 impl From<RoleId> for CommandPermissionId {
     fn from(id: RoleId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl<'a> From<&'a RoleId> for CommandPermissionId {
-    fn from(id: &RoleId) -> Self {
-        Self(id.0)
+        Self::new(id.get())
     }
 }
 
 impl From<UserId> for CommandPermissionId {
     fn from(id: UserId) -> Self {
-        Self(id.0)
-    }
-}
-
-impl<'a> From<&'a UserId> for CommandPermissionId {
-    fn from(id: &UserId) -> Self {
-        Self(id.0)
+        Self::new(id.get())
     }
 }
 
 impl From<CommandPermissionId> for RoleId {
     fn from(id: CommandPermissionId) -> Self {
-        Self(id.0)
+        Self::new(id.get())
     }
 }
 
 impl From<CommandPermissionId> for UserId {
     fn from(id: CommandPermissionId) -> Self {
-        Self(id.0)
+        Self::new(id.get())
     }
 }

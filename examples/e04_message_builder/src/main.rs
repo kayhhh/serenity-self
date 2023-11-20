@@ -15,15 +15,14 @@ impl EventHandler for Handler {
             let channel = match msg.channel_id.to_channel(&context).await {
                 Ok(channel) => channel,
                 Err(why) => {
-                    println!("Error getting channel: {:?}", why);
+                    println!("Error getting channel: {why:?}");
 
                     return;
                 },
             };
 
-            // The message builder allows for creating a message by
-            // mentioning users dynamically, pushing "safe" versions of
-            // content (such as bolding normalized content), displaying
+            // The message builder allows for creating a message by mentioning users dynamically,
+            // pushing "safe" versions of content (such as bolding normalized content), displaying
             // emojis, and more.
             let response = MessageBuilder::new()
                 .push("User ")
@@ -34,7 +33,7 @@ impl EventHandler for Handler {
                 .build();
 
             if let Err(why) = msg.channel_id.say(&context.http, &response).await {
-                println!("Error sending message: {:?}", why);
+                println!("Error sending message: {why:?}");
             }
         }
     }
@@ -55,6 +54,6 @@ async fn main() {
         Client::builder(&token, intents).event_handler(Handler).await.expect("Err creating client");
 
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }

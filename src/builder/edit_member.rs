@@ -1,91 +1,101 @@
-use std::collections::HashMap;
-
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
-use crate::json::{from_number, NULL};
-use crate::model::id::{ChannelId, RoleId};
-use crate::model::Timestamp;
+use crate::model::prelude::*;
 
-/// A builder which edits the properties of a [`Member`], to be used in
-/// conjunction with [`Member::edit`].
+/// A builder which edits the properties of a [`Member`], to be used in conjunction with
+/// [`Member::edit`].
 ///
-/// [`Member`]: crate::model::guild::Member
-/// [`Member::edit`]: crate::model::guild::Member::edit
-#[derive(Clone, Debug, Default)]
-pub struct EditMember(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#modify-guild-member)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditMember<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nick: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roles: Option<Vec<RoleId>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mute: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deaf: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_id: Option<Option<ChannelId>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    communication_disabled_until: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<GuildMemberFlags>,
 
-impl EditMember {
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> EditMember<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Whether to deafen the member.
     ///
-    /// Requires the [Deafen Members] permission.
+    /// **Note**: Requires the [Deafen Members] permission.
     ///
-    /// [Deafen Members]: crate::model::permissions::Permissions::DEAFEN_MEMBERS
-    pub fn deafen(&mut self, deafen: bool) -> &mut Self {
-        self.0.insert("deaf", Value::from(deafen));
+    /// [Deafen Members]: Permissions::DEAFEN_MEMBERS
+    pub fn deafen(mut self, deafen: bool) -> Self {
+        self.deaf = Some(deafen);
         self
     }
 
     /// Whether to mute the member.
     ///
-    /// Requires the [Mute Members] permission.
+    /// **Note**: Requires the [Mute Members] permission.
     ///
-    /// [Mute Members]: crate::model::permissions::Permissions::MUTE_MEMBERS
-    pub fn mute(&mut self, mute: bool) -> &mut Self {
-        self.0.insert("mute", Value::from(mute));
+    /// [Mute Members]: Permissions::MUTE_MEMBERS
+    pub fn mute(mut self, mute: bool) -> Self {
+        self.mute = Some(mute);
         self
     }
 
-    /// Changes the member's nickname. Pass an empty string to reset the
-    /// nickname.
+    /// Changes the member's nickname. Pass an empty string to reset the nickname.
     ///
-    /// Requires the [Manage Nicknames] permission.
+    /// **Note**: Requires the [Manage Nicknames] permission.
     ///
-    /// [Manage Nicknames]: crate::model::permissions::Permissions::MANAGE_NICKNAMES
-    pub fn nickname<S: ToString>(&mut self, nickname: S) -> &mut Self {
-        self.0.insert("nick", Value::from(nickname.to_string()));
+    /// [Manage Nicknames]: Permissions::MANAGE_NICKNAMES
+    pub fn nickname(mut self, nickname: impl Into<String>) -> Self {
+        self.nick = Some(nickname.into());
         self
     }
 
     /// Set the list of roles that the member should have.
     ///
-    /// Requires the [Manage Roles] permission to modify.
+    /// **Note**: Requires the [Manage Roles] permission to modify.
     ///
-    /// [Manage Roles]: crate::model::permissions::Permissions::MANAGE_ROLES
-    pub fn roles<T: AsRef<RoleId>, It: IntoIterator<Item = T>>(&mut self, roles: It) -> &mut Self {
-        let role_ids = roles.into_iter().map(|x| from_number(x.as_ref().0)).collect();
-
-        self._roles(role_ids);
+    /// [Manage Roles]: Permissions::MANAGE_ROLES
+    pub fn roles(mut self, roles: impl IntoIterator<Item = impl Into<RoleId>>) -> Self {
+        self.roles = Some(roles.into_iter().map(Into::into).collect());
         self
     }
 
-    fn _roles(&mut self, roles: Vec<Value>) {
-        self.0.insert("roles", Value::from(roles));
-    }
-
-    /// The Id of the voice channel to move the member to.
+    /// Move the member into a voice channel.
     ///
-    /// Requires the [Move Members] permission.
+    /// **Note**: Requires the [Move Members] permission.
     ///
-    /// [Move Members]: crate::model::permissions::Permissions::MOVE_MEMBERS
+    /// [Move Members]: Permissions::MOVE_MEMBERS
     #[inline]
-    pub fn voice_channel<C: Into<ChannelId>>(&mut self, channel_id: C) -> &mut Self {
-        self._voice_channel(channel_id.into());
-
+    pub fn voice_channel(mut self, channel_id: impl Into<ChannelId>) -> Self {
+        self.channel_id = Some(Some(channel_id.into()));
         self
     }
 
-    fn _voice_channel(&mut self, channel_id: ChannelId) {
-        let num = from_number(channel_id.0);
-        self.0.insert("channel_id", num);
-    }
-
-    /// Disconnects the user from their voice channel if any
+    /// Disconnects the user from their voice channel, if any.
     ///
-    /// Requires the [Move Members] permission.
+    /// **Note**: Requires the [Move Members] permission.
     ///
-    /// [Move Members]: crate::model::permissions::Permissions::MOVE_MEMBERS
-    pub fn disconnect_member(&mut self) -> &mut Self {
-        self.0.insert("channel_id", NULL);
-
+    /// [Move Members]: Permissions::MOVE_MEMBERS
+    pub fn disconnect_member(mut self) -> Self {
+        self.channel_id = Some(None);
         self
     }
 
@@ -94,35 +104,68 @@ impl EditMember {
     /// `time` is considered invalid if it is not a valid ISO8601 timestamp or if it is greater
     /// than 28 days from the current time.
     ///
-    /// Requires the [Moderate Members] permission.
+    /// **Note**: Requires the [Moderate Members] permission.
     ///
-    /// [Moderate Members]: crate::model::permissions::Permissions::MODERATE_MEMBERS
+    /// [Moderate Members]: Permissions::MODERATE_MEMBERS
     #[doc(alias = "timeout")]
-    pub fn disable_communication_until(&mut self, time: String) -> &mut Self {
-        self.0.insert("communication_disabled_until", Value::from(time));
+    pub fn disable_communication_until(mut self, time: String) -> Self {
+        self.communication_disabled_until = Some(Some(time));
         self
     }
 
     /// Times the user out until `time`.
     ///
     /// `time` is considered invalid if it is greater than 28 days from the current time.
-    /// Requires the [Moderate Members] permission.
     ///
-    /// [Moderate Members]: crate::model::permissions::Permissions::MODERATE_MEMBERS
+    /// **Note**: Requires the [Moderate Members] permission.
+    ///
+    /// [Moderate Members]: Permissions::MODERATE_MEMBERS
     #[doc(alias = "timeout")]
-    pub fn disable_communication_until_datetime(&mut self, time: Timestamp) -> &mut Self {
-        self.0.insert("communication_disabled_until", Value::from(time.to_string()));
-        self
+    pub fn disable_communication_until_datetime(self, time: Timestamp) -> Self {
+        self.disable_communication_until(time.to_string())
     }
 
     /// Allow a user to communicate, removing their timeout, if there is one.
     ///
-    /// Requires the [Moderate Members] permission.
+    /// **Note**: Requires the [Moderate Members] permission.
     ///
-    /// [Moderate Members]: crate::model::permissions::Permissions::MODERATE_MEMBERS
+    /// [Moderate Members]: Permissions::MODERATE_MEMBERS
     #[doc(alias = "timeout")]
-    pub fn enable_communication(&mut self) -> &mut Self {
-        self.0.insert("communication_disabled_until", NULL);
+    pub fn enable_communication(mut self) -> Self {
+        self.communication_disabled_until = Some(None);
         self
+    }
+
+    pub fn flags(mut self, flags: GuildMemberFlags) -> Self {
+        self.flags = Some(flags);
+        self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for EditMember<'a> {
+    type Context<'ctx> = (GuildId, UserId);
+    type Built = Member;
+
+    /// Edits the properties of the guild member.
+    ///
+    /// For details on permissions requirements, refer to each specific method.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Http`] if the current user lacks permission, or if invalid data is given.
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().edit_member(ctx.0, ctx.1, &self, self.audit_log_reason).await
     }
 }

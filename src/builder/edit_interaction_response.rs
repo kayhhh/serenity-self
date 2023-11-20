@@ -1,118 +1,132 @@
-use std::collections::HashMap;
+#[cfg(feature = "http")]
+use super::Builder;
+use super::{
+    CreateActionRow,
+    CreateAllowedMentions,
+    CreateAttachment,
+    CreateEmbed,
+    EditAttachments,
+    EditWebhookMessage,
+};
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
-use super::{CreateAllowedMentions, CreateEmbed};
-use crate::builder::CreateComponents;
-use crate::json;
-use crate::json::prelude::*;
-
-#[derive(Clone, Debug, Default)]
-pub struct EditInteractionResponse(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#edit-original-interaction-response)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditInteractionResponse(EditWebhookMessage);
 
 impl EditInteractionResponse {
-    /// Sets the `InteractionApplicationCommandCallbackData` for the message.
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Set the content of the message.
     ///
     /// **Note**: Message contents must be under 2000 unicode code points.
     #[inline]
-    pub fn content<D: ToString>(&mut self, content: D) -> &mut Self {
-        self._content(content.to_string())
-    }
-
-    fn _content(&mut self, content: String) -> &mut Self {
-        self.0.insert("content", Value::from(content));
-        self
-    }
-
-    /// Creates an embed for the message.
-    pub fn embed<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateEmbed) -> &mut CreateEmbed,
-    {
-        let mut embed = CreateEmbed::default();
-        f(&mut embed);
-        self.add_embed(embed)
+    pub fn content(self, content: impl Into<String>) -> Self {
+        Self(self.0.content(content))
     }
 
     /// Adds an embed for the message.
-    pub fn add_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-
-        let embeds = self.0.entry("embeds").or_insert_with(|| Value::from(Vec::<Value>::new()));
-
-        if let Some(embeds) = embeds.as_array_mut() {
-            embeds.push(embed);
-        }
-
-        self
+    ///
+    /// Embeds from the original message are reset when adding new embeds and must be re-added.
+    pub fn add_embed(self, embed: CreateEmbed) -> Self {
+        Self(self.0.add_embed(embed))
     }
 
     /// Adds multiple embeds to the message.
-    pub fn add_embeds(&mut self, embeds: Vec<CreateEmbed>) -> &mut Self {
-        for embed in embeds {
-            self.add_embed(embed);
-        }
-
-        self
+    ///
+    /// Embeds from the original message are reset when adding new embeds and must be re-added.
+    pub fn add_embeds(self, embeds: Vec<CreateEmbed>) -> Self {
+        Self(self.0.add_embeds(embeds))
     }
 
     /// Sets a single embed to include in the message
     ///
-    /// Calling this will overwrite the embed list.
-    /// To append embeds, call [`Self::add_embed`] instead.
-    pub fn set_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-        self.0.insert("embeds", Value::from(vec![embed]));
-
-        self
+    /// Calling this will overwrite the embed list. To append embeds, call [`Self::add_embed`]
+    /// instead.
+    pub fn embed(self, embed: CreateEmbed) -> Self {
+        Self(self.0.embed(embed))
     }
 
     /// Sets the embeds for the message.
     ///
     /// **Note**: You can only have up to 10 embeds per message.
-    pub fn set_embeds(&mut self, embeds: Vec<CreateEmbed>) -> &mut Self {
-        if self.0.contains_key("embeds") {
-            self.0.remove_entry("embeds");
-        }
-
-        for embed in embeds {
-            self.add_embed(embed);
-        }
-
-        self
+    ///
+    /// Calling this will overwrite the embed list. To append embeds, call [`Self::add_embeds`]
+    /// instead.
+    pub fn embeds(self, embeds: Vec<CreateEmbed>) -> Self {
+        Self(self.0.embeds(embeds))
     }
 
     /// Set the allowed mentions for the message.
-    pub fn allowed_mentions<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateAllowedMentions) -> &mut CreateAllowedMentions,
-    {
-        let mut allowed_mentions = CreateAllowedMentions::default();
-        f(&mut allowed_mentions);
-        let map = json::hashmap_to_json_map(allowed_mentions.0);
-        let allowed_mentions = Value::from(map);
-
-        self.0.insert("allowed_mentions", allowed_mentions);
-        self
-    }
-
-    /// Creates components for this message.
-    pub fn components<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateComponents) -> &mut CreateComponents,
-    {
-        let mut components = CreateComponents::default();
-        f(&mut components);
-
-        self.0.insert("components", Value::from(components.0));
-        self
+    pub fn allowed_mentions(self, allowed_mentions: CreateAllowedMentions) -> Self {
+        Self(self.0.allowed_mentions(allowed_mentions))
     }
 
     /// Sets the components of this message.
-    pub fn set_components(&mut self, components: CreateComponents) -> &mut Self {
-        self.0.insert("components", Value::Array(components.0));
-        self
+    pub fn components(self, components: Vec<CreateActionRow>) -> Self {
+        Self(self.0.components(components))
+    }
+    super::button_and_select_menu_convenience_methods!(self.0.components);
+
+    /// Sets attachments, see [`EditAttachments`] for more details.
+    pub fn attachments(self, attachments: EditAttachments) -> Self {
+        Self(self.0.attachments(attachments))
+    }
+
+    /// Adds a new attachment to the message.
+    ///
+    /// Resets existing attachments. See the documentation for [`EditAttachments`] for details.
+    pub fn new_attachment(self, attachment: CreateAttachment) -> Self {
+        Self(self.0.new_attachment(attachment))
+    }
+
+    /// Shorthand for [`EditAttachments::keep`].
+    pub fn keep_existing_attachment(self, id: AttachmentId) -> Self {
+        Self(self.0.keep_existing_attachment(id))
+    }
+
+    /// Shorthand for calling [`Self::attachments`] with [`EditAttachments::new`].
+    pub fn clear_attachments(self) -> Self {
+        Self(self.0.clear_attachments())
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for EditInteractionResponse {
+    type Context<'ctx> = &'ctx str;
+    type Built = Message;
+
+    /// Edits the initial interaction response. Does not work for ephemeral messages.
+    ///
+    /// The `application_id` used will usually be the bot's [`UserId`], except if the bot is very
+    /// old.
+    ///
+    /// **Note**: Message contents must be under 2000 unicode code points, and embeds must be under
+    /// 6000 code points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error::Model`] if the message content is too long. May also return an
+    /// [`Error::Http`] if the API returns an error, or an [`Error::Json`] if there is an error in
+    /// deserializing the API response.
+    async fn execute(
+        mut self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        self.0.check_length()?;
+
+        let files = self.0.attachments.as_mut().map_or(Vec::new(), |a| a.take_files());
+
+        cache_http.http().edit_original_interaction_response(ctx, &self, files).await
     }
 }

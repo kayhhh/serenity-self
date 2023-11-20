@@ -23,22 +23,21 @@ impl EventHandler for Handler {
     // Handler doesn't implement Debug here, so we specify to skip that argument.
     // Context doesn't implement Debug either, so it is also skipped.
     #[instrument(skip(self, _ctx))]
-    async fn resume(&self, _ctx: Context, resume: ResumedEvent) {
+    async fn resume(&self, _ctx: Context, _resume: ResumedEvent) {
         // Log at the DEBUG level.
         //
         // In this example, this will not show up in the logs because DEBUG is
         // below INFO, which is the set debug level.
-        debug!("Resumed; trace: {:?}", resume.trace);
+        debug!("Resumed");
     }
 }
 
 #[hook]
-// instrument will show additional information on all the logs that happen inside
-// the function.
+// instrument will show additional information on all the logs that happen inside the function.
 //
-// This additional information includes the function name, along with all it's arguments
-// formatted with the Debug impl.
-// This additional information will also only be shown if the LOG level is set to `debug`
+// This additional information includes the function name, along with all it's arguments formatted
+// with the Debug impl. This additional information will also only be shown if the LOG level is set
+// to `debug`
 #[instrument]
 async fn before(_: &Context, msg: &Message, command_name: &str) -> bool {
     info!("Got command '{}' by user '{}'", command_name, msg.author.name);
@@ -53,21 +52,20 @@ struct General;
 #[tokio::main]
 #[instrument]
 async fn main() {
-    // Call tracing_subscriber's initialize function, which configures `tracing`
-    // via environment variables.
+    // Call tracing_subscriber's initialize function, which configures `tracing` via environment
+    // variables.
     //
-    // For example, you can say to log all levels INFO and up via setting the
-    // environment variable `RUST_LOG` to `INFO`.
+    // For example, you can say to log all levels INFO and up via setting the environment variable
+    // `RUST_LOG` to `INFO`.
     //
-    // This environment variable is already preset if you use cargo-make to run
-    // the example.
+    // This environment variable is already preset if you use cargo-make to run the example.
     tracing_subscriber::fmt::init();
 
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
 
-    let framework =
-        StandardFramework::new().configure(|c| c.prefix("~")).before(before).group(&GENERAL_GROUP);
+    let framework = StandardFramework::new().before(before).group(&GENERAL_GROUP);
+    framework.configure(|c| c.prefix("~"));
 
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::DIRECT_MESSAGES
@@ -84,7 +82,7 @@ async fn main() {
 }
 
 // Currently, the instrument macro doesn't work with commands.
-// if you wish to instrument commands, use it on the before function.
+// If you wish to instrument commands, use it on the before function.
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     if let Err(why) = msg.channel_id.say(&ctx.http, "Pong! : )").await {

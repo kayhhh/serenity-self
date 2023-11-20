@@ -1,20 +1,45 @@
-use std::collections::HashMap;
-
-use crate::json::{from_number, Value};
-use crate::model::id::RoleId;
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
 /// A builder to add parameters when using [`GuildId::add_member`].
 ///
-/// [`GuildId::add_member`]: crate::model::id::GuildId::add_member
-#[derive(Clone, Debug, Default)]
-pub struct AddMember(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#add-guild-member).
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct AddMember {
+    access_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nick: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    roles: Vec<RoleId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mute: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deaf: Option<bool>,
+}
 
 impl AddMember {
-    /// Sets the OAuth2 access token for this request.
+    /// Constructs a new builder with the given access token, leaving all other fields empty.
+    pub fn new(access_token: String) -> Self {
+        Self {
+            access_token,
+            nick: None,
+            roles: Vec::new(),
+            mute: None,
+            deaf: None,
+        }
+    }
+
+    /// Sets the OAuth2 access token for this request, replacing the current one.
     ///
     /// Requires the access token to have the `guilds.join` scope granted.
-    pub fn access_token(&mut self, access_token: impl ToString) -> &mut Self {
-        self.0.insert("access_token", Value::from(access_token.to_string()));
+    pub fn access_token(mut self, access_token: impl Into<String>) -> Self {
+        self.access_token = access_token.into();
         self
     }
 
@@ -23,8 +48,8 @@ impl AddMember {
     /// Requires the [Manage Nicknames] permission.
     ///
     /// [Manage Nicknames]: crate::model::permissions::Permissions::MANAGE_NICKNAMES
-    pub fn nickname(&mut self, nickname: impl ToString) -> &mut Self {
-        self.0.insert("nick", Value::from(nickname.to_string()));
+    pub fn nickname(mut self, nickname: impl Into<String>) -> Self {
+        self.nick = Some(nickname.into());
         self
     }
 
@@ -33,10 +58,8 @@ impl AddMember {
     /// Requires the [Manage Roles] permission.
     ///
     /// [Manage Roles]: crate::model::permissions::Permissions::MANAGE_ROLES
-    pub fn roles(&mut self, roles: impl IntoIterator<Item = impl AsRef<RoleId>>) -> &mut Self {
-        let roles = roles.into_iter().map(|x| from_number(x.as_ref().0)).collect::<Vec<Value>>();
-
-        self.0.insert("roles", Value::from(roles));
+    pub fn roles(mut self, roles: impl IntoIterator<Item = impl Into<RoleId>>) -> Self {
+        self.roles = roles.into_iter().map(Into::into).collect();
         self
     }
 
@@ -45,8 +68,8 @@ impl AddMember {
     /// Requires the [Mute Members] permission.
     ///
     /// [Mute Members]: crate::model::permissions::Permissions::MUTE_MEMBERS
-    pub fn mute(&mut self, mute: bool) -> &mut Self {
-        self.0.insert("mute", Value::from(mute));
+    pub fn mute(mut self, mute: bool) -> Self {
+        self.mute = Some(mute);
         self
     }
 
@@ -55,8 +78,31 @@ impl AddMember {
     /// Requires the [Deafen Members] permission.
     ///
     /// [Deafen Members]: crate::model::permissions::Permissions::DEAFEN_MEMBERS
-    pub fn deafen(&mut self, deafen: bool) -> &mut Self {
-        self.0.insert("deaf", Value::from(deafen));
+    pub fn deafen(mut self, deafen: bool) -> Self {
+        self.deaf = Some(deafen);
         self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for AddMember {
+    type Context<'ctx> = (GuildId, UserId);
+    type Built = Option<Member>;
+
+    /// Adds a [`User`] to this guild with a valid OAuth2 access token.
+    ///
+    /// Returns the created [`Member`] object, or nothing if the user is already a member of the
+    /// guild.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Http`] if the current user lacks permission, or if invalid data is given.
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().add_guild_member(ctx.0, ctx.1, &self).await
     }
 }

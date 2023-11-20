@@ -42,7 +42,8 @@ impl fmt::Display for MessageParseError {
 /// Look up a message by a string.
 ///
 /// The lookup strategy is as follows (in order):
-/// 1. [Lookup by "{channel ID}-{message ID}"](`crate::utils::parse_message_id_pair`) (retrieved by shift-clicking on "Copy ID")
+/// 1. [Lookup by "{channel ID}-{message ID}"](`crate::utils::parse_message_id_pair`) (retrieved by
+///    shift-clicking on "Copy ID")
 /// 2. Lookup by message ID (the message must be in the context channel)
 /// 3. [Lookup by message URL](`crate::utils::parse_message_url`)
 #[async_trait::async_trait]
@@ -50,12 +51,12 @@ impl ArgumentConvert for Message {
     type Err = MessageParseError;
 
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         _guild_id: Option<GuildId>,
         channel_id: Option<ChannelId>,
         s: &str,
     ) -> Result<Self, Self::Err> {
-        let extract_from_message_id = || Some((channel_id?, MessageId(s.parse().ok()?)));
+        let extract_from_message_id = || Some((channel_id?, s.parse().ok()?));
 
         let extract_from_message_url = || {
             let (_guild_id, channel_id, message_id) = crate::utils::parse_message_url(s)?;
@@ -68,12 +69,14 @@ impl ArgumentConvert for Message {
             .ok_or(MessageParseError::Malformed)?;
 
         #[cfg(feature = "cache")]
-        if let Some(msg) = ctx.cache.message(channel_id, message_id) {
-            return Ok(msg);
+        if let Some(cache) = ctx.cache() {
+            if let Some(msg) = cache.message(channel_id, message_id) {
+                return Ok(msg.clone());
+            }
         }
 
         if cfg!(feature = "http") {
-            ctx.http.get_message(channel_id.0, message_id.0).await.map_err(MessageParseError::Http)
+            ctx.http().get_message(channel_id, message_id).await.map_err(MessageParseError::Http)
         } else {
             Err(MessageParseError::HttpNotAvailable)
         }

@@ -1,36 +1,31 @@
-//! The HTTP module which provides functions for performing requests to
-//! endpoints in Discord's API.
+//! The HTTP module which provides functions for performing requests to endpoints in Discord's API.
 //!
-//! An important function of the REST API is ratelimiting. Requests to endpoints
-//! are ratelimited to prevent spam, and once ratelimited Discord will stop
-//! performing requests. The library implements protection to pre-emptively
-//! ratelimit, to ensure that no wasted requests are made.
+//! An important function of the REST API is ratelimiting. Requests to endpoints are ratelimited to
+//! prevent spam, and once ratelimited Discord will stop performing requests. The library
+//! implements protection to pre-emptively ratelimit, to ensure that no wasted requests are made.
 //!
 //! The HTTP module comprises of two types of requests:
-//!
 //! - REST API requests, which require an authorization token;
 //! - Other requests, which do not require an authorization token.
 //!
-//! The former require a [`Client`] to have logged in, while the latter may be
-//! made regardless of any other usage of the library.
+//! The former require a [`Client`] to have logged in, while the latter may be made regardless of
+//! any other usage of the library.
 //!
 //! If a request spuriously fails, it will be retried once.
 //!
-//! Note that you may want to perform requests through a [model]s'
-//! instance methods where possible, as they each offer different
-//! levels of a high-level interface to the HTTP module.
+//! Note that you may want to perform requests through a [model]s' instance methods where possible,
+//! as they each offer different levels of a high-level interface to the HTTP module.
 //!
 //! [`Client`]: crate::Client
 //! [model]: crate::model
 
-pub mod client;
-pub mod error;
-pub mod multipart;
-pub mod ratelimiting;
-pub mod request;
-pub mod routing;
-pub mod typing;
-mod utils;
+mod client;
+mod error;
+mod multipart;
+mod ratelimiting;
+mod request;
+mod routing;
+mod typing;
 
 use std::sync::Arc;
 
@@ -38,31 +33,31 @@ use reqwest::Method;
 pub use reqwest::StatusCode;
 
 pub use self::client::*;
-pub use self::error::Error as HttpError;
-use self::request::Request;
+pub use self::error::*;
+pub use self::multipart::*;
+pub use self::ratelimiting::*;
+pub use self::request::*;
+pub use self::routing::*;
 pub use self::typing::*;
 #[cfg(feature = "cache")]
 use crate::cache::Cache;
 #[cfg(feature = "client")]
 use crate::client::Context;
 use crate::model::prelude::*;
-#[cfg(feature = "client")]
-use crate::CacheAndHttp;
 
-/// This trait will be required by functions that need [`Http`] and can
-/// optionally use a [`Cache`] to potentially avoid REST-requests.
+/// This trait will be required by functions that need [`Http`] and can optionally use a [`Cache`]
+/// to potentially avoid REST-requests.
 ///
-/// The types [`Context`] and [`Http`] implement this trait
-/// and thus passing these to functions expecting `impl CacheHttp` is possible. For the full list
-/// of implementations, see the Implementors and Implementations on Foreign Types section in the
-/// generated docs.
+/// The types [`Context`] and [`Http`] implement this trait and thus passing these to functions
+/// expecting `impl CacheHttp` is possible. For the full list of implementations, see the
+/// Implementors and Implementations on Foreign Types section in the generated docs.
 ///
-/// In a situation where you have the `cache`-feature enabled but you do not
-/// pass a cache, the function will behave as if no `cache`-feature is active.
+/// In a situation where you have the `cache`-feature enabled but you do not pass a cache, the
+/// function will behave as if no `cache`-feature is active.
 ///
-/// If you are calling a function that expects `impl CacheHttp` as argument
-/// and you wish to utilise the `cache`-feature but you got no access to a
-/// [`Context`], you can pass a tuple of `(&Arc<Cache>, &Http)`.
+/// If you are calling a function that expects `impl CacheHttp` as argument and you wish to utilise
+/// the `cache`-feature but you got no access to a [`Context`], you can pass a tuple of
+/// `(&Arc<Cache>, &Http)`.
 pub trait CacheHttp: Send + Sync {
     fn http(&self) -> &Http;
 
@@ -101,17 +96,6 @@ where
 
 #[cfg(feature = "client")]
 impl CacheHttp for Context {
-    fn http(&self) -> &Http {
-        &self.http
-    }
-    #[cfg(feature = "cache")]
-    fn cache(&self) -> Option<&Arc<Cache>> {
-        Some(&self.cache)
-    }
-}
-
-#[cfg(feature = "client")]
-impl CacheHttp for CacheAndHttp {
     fn http(&self) -> &Http {
         &self.http
     }
@@ -170,7 +154,7 @@ pub enum LightMethod {
 
 impl LightMethod {
     #[must_use]
-    pub fn reqwest_method(self) -> Method {
+    pub const fn reqwest_method(self) -> Method {
         match self {
             Self::Delete => Method::DELETE,
             Self::Get => Method::GET,
@@ -181,10 +165,7 @@ impl LightMethod {
     }
 }
 
-/// Representation of the method of a query to send for the [`get_guilds`]
-/// function.
-///
-/// [`get_guilds`]: Http::get_guilds
+/// Representation of the method of a query to send for the [`Http::get_guilds`] function.
 #[non_exhaustive]
 pub enum GuildPagination {
     /// The Id to get the guilds after.
@@ -193,13 +174,20 @@ pub enum GuildPagination {
     Before(GuildId),
 }
 
-/// Representation of the method of a query to send for the [`get_scheduled_event_users`] function.
-///
-/// [`get_scheduled_event_users`]: Http::get_scheduled_event_users
+/// Representation of the method of a query to send for the [`Http::get_scheduled_event_users`] and
+/// [`Http::get_bans`] functions.
 #[non_exhaustive]
 pub enum UserPagination {
     /// The Id to get the users after.
     After(UserId),
     /// The Id to get the users before.
     Before(UserId),
+}
+
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub enum MessagePagination {
+    After(MessageId),
+    Around(MessageId),
+    Before(MessageId),
 }

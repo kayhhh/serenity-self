@@ -1,102 +1,119 @@
-use std::collections::HashMap;
-
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
-use crate::json;
-use crate::model::guild::GuildWelcomeChannelEmoji;
+use crate::model::prelude::*;
 
-/// A builder to specify the fields to edit in a [`GuildWelcomeScreen`].
+/// A builder to edit the welcome screen of a guild
 ///
-/// [`GuildWelcomeScreen`]: crate::model::guild::GuildWelcomeScreen
-#[derive(Clone, Debug, Default)]
-pub struct EditGuildWelcomeScreen(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#modify-guild-welcome-screen)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditGuildWelcomeScreen<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    welcome_channels: Vec<CreateGuildWelcomeChannel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
 
-impl EditGuildWelcomeScreen {
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> EditGuildWelcomeScreen<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Whether the welcome screen is enabled or not.
-    pub fn enabled(&mut self, enabled: bool) -> &mut Self {
-        self.0.insert("enabled", Value::from(enabled));
-
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = Some(enabled);
         self
     }
 
     /// The server description shown in the welcome screen.
-    pub fn description<D: ToString>(&mut self, description: D) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
-
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
-    pub fn create_welcome_channel<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateGuildWelcomeChannel) -> &mut CreateGuildWelcomeChannel,
-    {
-        let mut data = CreateGuildWelcomeChannel::default();
-        f(&mut data);
-
-        self.add_welcome_channel(data);
-
+    pub fn add_welcome_channel(mut self, channel: CreateGuildWelcomeChannel) -> Self {
+        self.welcome_channels.push(channel);
         self
     }
 
-    pub fn add_welcome_channel(&mut self, channel: CreateGuildWelcomeChannel) -> &mut Self {
-        let new_data = json::hashmap_to_json_map(channel.0);
-
-        let channels =
-            self.0.entry("welcome_channels").or_insert_with(|| Value::from(Vec::<Value>::new()));
-        let channels_array = channels.as_array_mut().expect("Must be an array.");
-
-        channels_array.push(Value::from(new_data));
-
+    /// Channels linked in the welcome screen and their display options
+    pub fn set_welcome_channels(mut self, channels: Vec<CreateGuildWelcomeChannel>) -> Self {
+        self.welcome_channels = channels;
         self
     }
 
-    pub fn set_welcome_channels(&mut self, channels: Vec<CreateGuildWelcomeChannel>) -> &mut Self {
-        let new_channels = channels
-            .into_iter()
-            .map(|f| Value::from(json::hashmap_to_json_map(f.0)))
-            .collect::<Vec<Value>>();
-
-        self.0.insert("welcome_channels", Value::from(new_channels));
-
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
         self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for EditGuildWelcomeScreen<'a> {
+    type Context<'ctx> = GuildId;
+    type Built = GuildWelcomeScreen;
+
+    /// Edits the guild's welcome screen.
+    ///
+    /// **Note**: Requires the [Manage Guild] permission.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Http`] if the current user lacks permission.
+    ///
+    /// [Manage Guild]: Permissions::MANAGE_GUILD
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().edit_guild_welcome_screen(ctx, &self, self.audit_log_reason).await
     }
 }
 
 /// A builder for creating a [`GuildWelcomeChannel`].
 ///
-/// [`GuildWelcomeChannel`]: crate::model::guild::GuildWelcomeChannel
-#[derive(Clone, Debug, Default)]
-pub struct CreateGuildWelcomeChannel(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#welcome-screen-object-welcome-screen-channel-structure)
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateGuildWelcomeChannel(GuildWelcomeChannel);
 
 impl CreateGuildWelcomeChannel {
-    /// The Id of the channel to show. It is required.
-    pub fn id(&mut self, id: u64) -> &mut Self {
-        self.0.insert("channel_id", Value::from(id.to_string()));
+    pub fn new(channel_id: ChannelId, description: String) -> Self {
+        Self(GuildWelcomeChannel {
+            channel_id,
+            description,
+            emoji: None,
+        })
+    }
 
+    /// The Id of the channel to show.
+    pub fn id(mut self, id: impl Into<ChannelId>) -> Self {
+        self.0.channel_id = id.into();
         self
     }
 
-    /// The description shown for the channel. It is required.
-    pub fn description<D: ToString>(&mut self, description: D) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
-
+    /// The description shown for the channel.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.0.description = description.into();
         self
     }
 
     /// The emoji shown for the channel.
-    pub fn emoji(&mut self, emoji: GuildWelcomeChannelEmoji) -> &mut Self {
-        match emoji {
-            GuildWelcomeChannelEmoji::Unicode(name) => {
-                self.0.insert("emoji_name", Value::from(name));
-            },
-            GuildWelcomeChannelEmoji::Custom {
-                id,
-                name,
-            } => {
-                self.0.insert("emoji_id", Value::from(id.to_string()));
-                self.0.insert("emoji_name", Value::from(name));
-            },
-        }
-
+    pub fn emoji(mut self, emoji: GuildWelcomeChannelEmoji) -> Self {
+        self.0.emoji = Some(emoji);
         self
     }
 }

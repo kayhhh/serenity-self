@@ -2,38 +2,33 @@ use std::error::Error as StdError;
 use std::fmt::{self, Error as FormatError};
 use std::io::Error as IoError;
 
-#[cfg(feature = "gateway")]
-use async_tungstenite::tungstenite::error::Error as TungsteniteError;
 #[cfg(feature = "http")]
 use reqwest::{header::InvalidHeaderValue, Error as ReqwestError};
-use serde_json::Error as JsonError;
+#[cfg(feature = "gateway")]
+use tokio_tungstenite::tungstenite::error::Error as TungsteniteError;
 use tracing::instrument;
 
 #[cfg(feature = "client")]
 use crate::client::ClientError;
-#[cfg(feature = "collector")]
-use crate::collector::CollectorError;
 #[cfg(feature = "gateway")]
 use crate::gateway::GatewayError;
 #[cfg(feature = "http")]
 use crate::http::HttpError;
 use crate::internal::prelude::*;
+use crate::json::JsonError;
 use crate::model::ModelError;
 
 /// The common result type between most library functions.
 ///
-/// The library exposes functions which, for a result type, exposes only one
-/// type, rather than the usual 2 (`Result<T, Error>`). This is because all
-/// functions that return a result return serenity's [`Error`], so this is
-/// implied, and a "simpler" result is used.
-pub type Result<T> = StdResult<T, Error>;
+/// The library exposes functions which, for a result type, exposes only one type, rather than the
+/// usual 2 (`Result<T, Error>`). This is because all functions that return a result return
+/// serenity's [`Error`], so this is implied, and a "simpler" result is used.
+pub type Result<T, E = Error> = StdResult<T, E>;
 
-/// A common error enum returned by most of the library's functionality within a
-/// custom [`Result`].
+/// A common error enum returned by most of the library's functionality within a custom [`Result`].
 ///
-/// The most common error types, the [`ClientError`] and [`GatewayError`]
-/// enums, are both wrapped around this in the form of the [`Self::Client`] and
-/// [`Self::Gateway`] variants.
+/// The most common error types, the [`ClientError`] and [`GatewayError`] enums, are both wrapped
+/// around this in the form of the [`Self::Client`] and [`Self::Gateway`] variants.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -43,17 +38,15 @@ pub enum Error {
     Format(FormatError),
     /// An [`std::io`] error.
     Io(IoError),
-    /// An error from the [`serde_json`] crate.
+    #[cfg_attr(not(feature = "simd_json"), doc = "An error from the [`serde_json`] crate.")]
+    #[cfg_attr(feature = "simd_json", doc = "An error from the [`simd_json`] crate.")]
     Json(JsonError),
-    #[cfg(feature = "simd_json")]
-    /// An error from the `simd_json` crate.
-    SimdJson(simd_json::Error),
     /// An error from the [`model`] module.
     ///
     /// [`model`]: crate::model
     Model(ModelError),
-    /// Input exceeded a limit.
-    /// Providing the input and the limit that's not supposed to be exceeded.
+    /// Input exceeded a limit. Providing the input and the limit that's not supposed to be
+    /// exceeded.
     ///
     /// *This only exists for the [`GuildId::ban`] and [`Member::ban`] functions. For their cases,
     /// it's the "reason".*
@@ -61,8 +54,8 @@ pub enum Error {
     /// [`GuildId::ban`]: crate::model::id::GuildId::ban
     /// [`Member::ban`]: crate::model::guild::Member::ban
     ExceededLimit(String, u32),
-    /// The input is not in the specified range.
-    /// Returned by [`GuildId::members`], [`Guild::members`] and [`PartialGuild::members`]
+    /// The input is not in the specified range. Returned by [`GuildId::members`],
+    /// [`Guild::members`] and [`PartialGuild::members`]
     ///
     /// (param_name, value, range_min, range_max)
     ///
@@ -70,9 +63,8 @@ pub enum Error {
     /// [`Guild::members`]: crate::model::guild::Guild::members
     /// [`PartialGuild::members`]: crate::model::guild::PartialGuild::members
     NotInRange(&'static str, u64, u64, u64),
-    /// Some other error. This is only used for "Expected value <TYPE>" errors,
-    /// when a more detailed error can not be easily provided via the
-    /// [`Error::Decode`] variant.
+    /// Some other error. This is only used for "Expected value \<TYPE\>" errors, when a more
+    /// detailed error can not be easily provided via the [`Error::Decode`] variant.
     Other(&'static str),
     /// An error from the [`url`] crate.
     Url(String),
@@ -81,11 +73,6 @@ pub enum Error {
     /// [client]: crate::client
     #[cfg(feature = "client")]
     Client(ClientError),
-    /// A [collector] error.
-    ///
-    /// [collector]: crate::collector
-    #[cfg(feature = "collector")]
-    Collector(CollectorError),
     /// An error from the [`gateway`] module.
     ///
     /// [`gateway`]: crate::gateway
@@ -95,17 +82,10 @@ pub enum Error {
     ///
     /// [`http`]: crate::http
     #[cfg(feature = "http")]
-    Http(Box<HttpError>),
+    Http(HttpError),
     /// An error from the `tungstenite` crate.
     #[cfg(feature = "gateway")]
     Tungstenite(TungsteniteError),
-}
-
-#[cfg(feature = "simd_json")]
-impl From<simd_json::Error> for Error {
-    fn from(e: simd_json::Error) -> Self {
-        Error::SimdJson(e)
-    }
 }
 
 impl From<FormatError> for Error {
@@ -149,7 +129,7 @@ impl From<TungsteniteError> for Error {
 #[cfg(feature = "http")]
 impl From<HttpError> for Error {
     fn from(e: HttpError) -> Error {
-        Error::Http(Box::new(e))
+        Error::Http(e)
     }
 }
 
@@ -178,12 +158,8 @@ impl fmt::Display for Error {
             Self::Json(inner) => fmt::Display::fmt(&inner, f),
             Self::Model(inner) => fmt::Display::fmt(&inner, f),
             Self::Url(msg) => f.write_str(msg),
-            #[cfg(feature = "simd_json")]
-            Error::SimdJson(inner) => fmt::Display::fmt(&inner, f),
             #[cfg(feature = "client")]
             Self::Client(inner) => fmt::Display::fmt(&inner, f),
-            #[cfg(feature = "collector")]
-            Self::Collector(inner) => fmt::Display::fmt(&inner, f),
             #[cfg(feature = "gateway")]
             Self::Gateway(inner) => fmt::Display::fmt(&inner, f),
             #[cfg(feature = "http")]
@@ -204,10 +180,6 @@ impl StdError for Error {
             Self::Model(inner) => Some(inner),
             #[cfg(feature = "client")]
             Self::Client(inner) => Some(inner),
-            #[cfg(feature = "collector")]
-            Self::Collector(inner) => Some(inner),
-            #[cfg(feature = "gateway")]
-            Self::Gateway(inner) => Some(inner),
             #[cfg(feature = "http")]
             Self::Http(inner) => Some(inner),
             #[cfg(feature = "gateway")]

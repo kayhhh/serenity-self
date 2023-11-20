@@ -1,53 +1,108 @@
-use std::collections::HashMap;
-
+#[cfg(feature = "http")]
+use super::Builder;
+use super::CreateAttachment;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
-use crate::model::channel::AttachmentType;
+#[cfg(feature = "http")]
+use crate::model::prelude::*;
 
-/// A builder to create or edit a [`Sticker`] for use via a number of model methods.
+/// A builder to create a guild sticker
 ///
-/// These are:
-///
-/// - [`PartialGuild::create_sticker`]
-/// - [`Guild::create_sticker`]
-/// - [`GuildId::create_sticker`]
-///
-/// [`Sticker`]: crate::model::sticker::Sticker
-/// [`PartialGuild::create_sticker`]: crate::model::guild::PartialGuild::create_sticker
-/// [`Guild::create_sticker`]: crate::model::guild::Guild::create_sticker
-/// [`GuildId::create_sticker`]: crate::model::id::GuildId::create_sticker
-#[derive(Clone, Debug, Default)]
-pub struct CreateSticker<'a>(pub HashMap<&'static str, Value>, pub Option<AttachmentType<'a>>);
+/// [Discord docs](https://discord.com/developers/docs/resources/sticker#create-guild-sticker)
+#[derive(Clone, Debug)]
+#[must_use]
+pub struct CreateSticker<'a> {
+    name: String,
+    description: String,
+    tags: String,
+    file: CreateAttachment,
+    audit_log_reason: Option<&'a str>,
+}
 
 impl<'a> CreateSticker<'a> {
-    /// The name of the sticker to set.
+    /// Creates a new builder with the given data. All of this builder's fields are required.
+    pub fn new(name: impl Into<String>, file: CreateAttachment) -> Self {
+        Self {
+            name: name.into(),
+            tags: String::new(),
+            description: String::new(),
+            file,
+            audit_log_reason: None,
+        }
+    }
+
+    /// Set the name of the sticker, replacing the current value as set in [`Self::new`].
     ///
     /// **Note**: Must be between 2 and 30 characters long.
-    pub fn name<S: ToString>(&mut self, name: S) -> &mut Self {
-        self.0.insert("name", Value::from(name.to_string()));
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
         self
     }
 
-    /// The description of the sticker.
+    /// Set the description of the sticker, replacing the current value as set in [`Self::new`].
     ///
-    /// **Note**: If not empty, must be between 2 and 100 characters long.
-    pub fn description<S: ToString>(&mut self, description: S) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
+    /// **Note**: Must be empty or 2-100 characters.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = description.into();
         self
     }
 
-    /// The Discord name of a unicode emoji representing the sticker's expression.
+    /// The Discord name of a unicode emoji representing the sticker's expression. Replaces the
+    /// current value as set in [`Self::new`].
     ///
-    /// **Note**: Must be between 2 and 200 characters long.
-    pub fn tags<S: ToString>(&mut self, tags: S) -> &mut Self {
-        self.0.insert("tags", Value::from(tags.to_string()));
+    /// **Note**: Max 200 characters long.
+    pub fn tags(mut self, tags: impl Into<String>) -> Self {
+        self.tags = tags.into();
         self
     }
 
-    /// The sticker file.
+    /// Set the sticker file. Replaces the current value as set in [`Self::new`].
     ///
     /// **Note**: Must be a PNG, APNG, or Lottie JSON file, max 500 KB.
-    pub fn file<T: Into<AttachmentType<'a>>>(&mut self, file: T) -> &mut Self {
-        self.1 = Some(file.into());
+    pub fn file(mut self, file: CreateAttachment) -> Self {
+        self.file = file;
         self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for CreateSticker<'a> {
+    type Context<'ctx> = GuildId;
+    type Built = Sticker;
+
+    /// Creates a new sticker in the guild with the data set, if any.
+    ///
+    /// **Note**: Requires the [Create Guild Expressions] permission.
+    ///
+    /// # Errors
+    ///
+    /// If the `cache` is enabled, returns a [`ModelError::InvalidPermissions`] if the current user
+    /// lacks permission. Otherwise returns [`Error::Http`], as well as if invalid data is given.
+    ///
+    /// [Create Guild Expressions]: Permissions::CREATE_GUILD_EXPRESSIONS
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        #[cfg(feature = "cache")]
+        crate::utils::user_has_guild_perms(
+            &cache_http,
+            ctx,
+            Permissions::CREATE_GUILD_EXPRESSIONS,
+        )?;
+
+        let map = vec![("name", self.name), ("tags", self.tags), ("description", self.description)];
+
+        cache_http.http().create_sticker(ctx, map, self.file, self.audit_log_reason).await
     }
 }

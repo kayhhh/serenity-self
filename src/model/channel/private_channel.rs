@@ -3,11 +3,11 @@ use std::fmt;
 use std::sync::Arc;
 
 #[cfg(feature = "model")]
-use crate::builder::{CreateMessage, EditMessage, GetMessages};
-#[cfg(feature = "http")]
-use crate::http::{Http, Typing};
+use crate::builder::{CreateAttachment, CreateMessage, EditMessage, GetMessages};
 #[cfg(feature = "model")]
-use crate::model::channel::AttachmentType;
+use crate::http::CacheHttp;
+#[cfg(feature = "model")]
+use crate::http::{Http, Typing};
 use crate::model::prelude::*;
 use crate::model::utils::single_recipient;
 use crate::model::Timestamp;
@@ -15,7 +15,7 @@ use crate::model::Timestamp;
 /// A Direct Message text channel with another user.
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/channel#channel-object).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct PrivateChannel {
     /// The unique Id of the private channel.
@@ -44,18 +44,17 @@ impl PrivateChannel {
     #[allow(clippy::missing_errors_doc)]
     #[inline]
     pub async fn broadcast_typing(&self, http: impl AsRef<Http>) -> Result<()> {
-        self.id.broadcast_typing(&http).await
+        self.id.broadcast_typing(http).await
     }
 
     /// React to a [`Message`] with a custom [`Emoji`] or unicode character.
     ///
-    /// [`Message::react`] may be a more suited method of reacting in most
-    /// cases.
+    /// [`Message::react`] may be a more suited method of reacting in most cases.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the reaction cannot be added,
-    /// or if a message with that Id does not exist.
+    /// Returns [`Error::Http`] if the reaction cannot be added, or if a message with that Id does
+    /// not exist.
     #[inline]
     pub async fn create_reaction(
         &self,
@@ -63,16 +62,15 @@ impl PrivateChannel {
         message_id: impl Into<MessageId>,
         reaction_type: impl Into<ReactionType>,
     ) -> Result<()> {
-        self.id.create_reaction(&http, message_id, reaction_type).await
+        self.id.create_reaction(http, message_id, reaction_type).await
     }
 
-    /// Deletes the channel. This does not delete the contents of the channel,
-    /// and is equivalent to closing a private channel on the client, which can
-    /// be re-opened.
+    /// Deletes the channel. This does not delete the contents of the channel, and is equivalent to
+    /// closing a private channel on the client, which can be re-opened.
     #[allow(clippy::missing_errors_doc)]
     #[inline]
-    pub async fn delete(&self, http: impl AsRef<Http>) -> Result<Channel> {
-        self.id.delete(&http).await
+    pub async fn delete(&self, http: impl AsRef<Http>) -> Result<PrivateChannel> {
+        self.id.delete(http).await?.private().ok_or(Error::Model(ModelError::InvalidChannelType))
     }
 
     /// Deletes all messages by Ids from the given vector in the channel.
@@ -81,30 +79,24 @@ impl PrivateChannel {
     ///
     /// Requires the [Manage Messages] permission.
     ///
-    /// **Note**: Messages that are older than 2 weeks can't be deleted using
-    /// this method.
+    /// **Note**: Messages that are older than 2 weeks can't be deleted using this method.
     ///
     /// # Errors
     ///
-    /// Returns [`ModelError::BulkDeleteAmount`] if an attempt was made to
-    /// delete either 0 or more than 100 messages.
+    /// Returns [`ModelError::BulkDeleteAmount`] if an attempt was made to delete either 0 or more
+    /// than 100 messages.
     ///
     /// [Manage Messages]: Permissions::MANAGE_MESSAGES
     #[inline]
-    pub async fn delete_messages<T, It>(
+    pub async fn delete_messages<T: AsRef<MessageId>>(
         &self,
         http: impl AsRef<Http>,
-        message_ids: It,
-    ) -> Result<()>
-    where
-        T: AsRef<MessageId>,
-        It: IntoIterator<Item = T>,
-    {
-        self.id.delete_messages(&http, message_ids).await
+        message_ids: impl IntoIterator<Item = T>,
+    ) -> Result<()> {
+        self.id.delete_messages(http, message_ids).await
     }
 
-    /// Deletes all permission overrides in the channel from a member
-    /// or role.
+    /// Deletes all permission overrides in the channel from a member or role.
     ///
     /// **Note**: Requires the [Manage Channel] permission.
     ///
@@ -116,18 +108,16 @@ impl PrivateChannel {
         http: impl AsRef<Http>,
         permission_type: PermissionOverwriteType,
     ) -> Result<()> {
-        self.id.delete_permission(&http, permission_type).await
+        self.id.delete_permission(http, permission_type).await
     }
 
     /// Deletes the given [`Reaction`] from the channel.
     ///
-    /// **Note**: In private channels, the current user may only
-    /// delete it's own reactions.
+    /// **Note**: In private channels, the current user may only delete it's own reactions.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the reaction is not from
-    /// the current user.
+    /// Returns [`Error::Http`] if the reaction is not from the current user.
     #[inline]
     pub async fn delete_reaction(
         &self,
@@ -136,44 +126,39 @@ impl PrivateChannel {
         user_id: Option<UserId>,
         reaction_type: impl Into<ReactionType>,
     ) -> Result<()> {
-        self.id.delete_reaction(&http, message_id, user_id, reaction_type).await
+        self.id.delete_reaction(http, message_id, user_id, reaction_type).await
     }
 
     /// Edits a [`Message`] in the channel given its Id.
     ///
-    /// Message editing preserves all unchanged message data.
+    /// Message editing preserves all unchanged message data, with some exceptions for embeds and
+    /// attachments.
     ///
-    /// Refer to the documentation for [`EditMessage`] for more information
-    /// regarding message restrictions and requirements.
+    /// **Note**: In most cases requires that the current user be the author of the message.
     ///
-    /// **Note**: Requires that the current user be the author of the message.
+    /// Refer to the documentation for [`EditMessage`] for information regarding content
+    /// restrictions and requirements.
     ///
     /// # Errors
     ///
-    /// Returns a [`ModelError::MessageTooLong`] if the content of the message
-    /// is over the [`the limit`], containing the number of unicode code points
-    /// over the limit.
+    /// See [`EditMessage::execute`] for a list of possible errors, and their corresponding
+    /// reasons.
     ///
-    /// Returns [`Error::Http`] if the current user is not the owner of the message.
-    ///
-    /// [`the limit`]: crate::builder::EditMessage::content
+    /// [`EditMessage::execute`]: ../../builder/struct.EditMessage.html#method.execute
     #[inline]
-    pub async fn edit_message<'a, F>(
+    pub async fn edit_message(
         &self,
-        http: impl AsRef<Http>,
+        cache_http: impl CacheHttp,
         message_id: impl Into<MessageId>,
-        f: F,
-    ) -> Result<Message>
-    where
-        F: for<'b> FnOnce(&'b mut EditMessage<'a>) -> &'b mut EditMessage<'a>,
-    {
-        self.id.edit_message(&http, message_id, f).await
+        builder: EditMessage,
+    ) -> Result<Message> {
+        self.id.edit_message(cache_http, message_id, builder).await
     }
 
     /// Determines if the channel is NSFW.
     ///
-    /// **Note**: This method is for consistency. This will always return
-    /// `false`, due to DMs not being considered NSFW.
+    /// **Note**: This method is for consistency. This will always return `false`, due to DMs not
+    /// being considered NSFW.
     #[inline]
     #[must_use]
     #[allow(clippy::unused_self)]
@@ -185,30 +170,33 @@ impl PrivateChannel {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if a message with that Id does not
-    /// exist in this channel.
+    /// Returns [`Error::Http`] if a message with that Id does not exist in this channel.
     #[inline]
     pub async fn message(
         &self,
-        http: impl AsRef<Http>,
+        cache_http: impl CacheHttp,
         message_id: impl Into<MessageId>,
     ) -> Result<Message> {
-        self.id.message(&http, message_id).await
+        self.id.message(cache_http, message_id).await
     }
 
     /// Gets messages from the channel.
     ///
-    /// Refer to [`GetMessages`] for more information on how to use `builder`.
+    /// **Note**: If the user does not have the [Read Message History] permission, returns an empty
+    /// [`Vec`].
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if an invalid value is set in the builder.
+    /// Returns [`Error::Http`] if the current user lacks permission.
+    ///
+    /// [Read Message History]: Permissions::READ_MESSAGE_HISTORY
     #[inline]
-    pub async fn messages<F>(&self, http: impl AsRef<Http>, builder: F) -> Result<Vec<Message>>
-    where
-        F: FnOnce(&mut GetMessages) -> &mut GetMessages,
-    {
-        self.id.messages(&http, builder).await
+    pub async fn messages(
+        &self,
+        cache_http: impl CacheHttp,
+        builder: GetMessages,
+    ) -> Result<Vec<Message>> {
+        self.id.messages(cache_http, builder).await
     }
 
     /// Returns "DM with $username#discriminator".
@@ -217,20 +205,18 @@ impl PrivateChannel {
         format!("DM with {}", self.recipient.tag())
     }
 
-    /// Gets the list of [`User`]s who have reacted to a [`Message`] with a
-    /// certain [`Emoji`].
+    /// Gets the list of [`User`]s who have reacted to a [`Message`] with a certain [`Emoji`].
     ///
-    /// The default `limit` is `50` - specify otherwise to receive a different
-    /// maximum number of users. The maximum that may be retrieve at a time is
-    /// `100`, if a greater number is provided then it is automatically reduced.
+    /// The default `limit` is `50` - specify otherwise to receive a different maximum number of
+    /// users. The maximum that may be retrieve at a time is `100`, if a greater number is provided
+    /// then it is automatically reduced.
     ///
-    /// The optional `after` attribute is to retrieve the users after a certain
-    /// user. This is useful for pagination.
+    /// The optional `after` attribute is to retrieve the users after a certain user. This is
+    /// useful for pagination.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if a message with the given Id does not exist
-    /// in the channel.
+    /// Returns [`Error::Http`] if a message with the given Id does not exist in the channel.
     #[inline]
     pub async fn reaction_users(
         &self,
@@ -240,158 +226,146 @@ impl PrivateChannel {
         limit: Option<u8>,
         after: impl Into<Option<UserId>>,
     ) -> Result<Vec<User>> {
-        self.id.reaction_users(&http, message_id, reaction_type, limit, after).await
+        self.id.reaction_users(http, message_id, reaction_type, limit, after).await
     }
 
     /// Pins a [`Message`] to the channel.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the number of pinned messages
-    /// would exceed the 50 message limit.
+    /// Returns [`Error::Http`] if the number of pinned messages would exceed the 50 message limit.
     #[inline]
     pub async fn pin(
         &self,
         http: impl AsRef<Http>,
         message_id: impl Into<MessageId>,
     ) -> Result<()> {
-        self.id.pin(&http, message_id).await
+        self.id.pin(http, message_id).await
     }
 
-    /// Retrieves the list of messages that have been pinned in the private
-    /// channel.
+    /// Retrieves the list of messages that have been pinned in the private channel.
     #[allow(clippy::missing_errors_doc)]
     #[inline]
     pub async fn pins(&self, http: impl AsRef<Http>) -> Result<Vec<Message>> {
-        self.id.pins(&http).await
+        self.id.pins(http).await
     }
 
     /// Sends a message with just the given message content in the channel.
     ///
+    /// **Note**: Message content must be under 2000 unicode code points.
+    ///
     /// # Errors
     ///
-    /// Returns a [`ModelError::MessageTooLong`] if the content of the message
-    /// is over the above limit, containing the number of unicode code points
-    /// over the limit.
+    /// Returns a [`ModelError::MessageTooLong`] if the content length is over the above limit. See
+    /// [`CreateMessage::execute`] for more details.
+    ///
+    /// [`CreateMessage::execute`]: ../../builder/struct.CreateMessage.html#method.execute
     #[inline]
-    pub async fn say(&self, http: impl AsRef<Http>, content: impl fmt::Display) -> Result<Message> {
-        self.id.say(&http, content).await
+    pub async fn say(
+        &self,
+        cache_http: impl CacheHttp,
+        content: impl Into<String>,
+    ) -> Result<Message> {
+        self.id.say(cache_http, content).await
     }
 
-    /// Sends (a) file(s) along with optional message contents.
+    /// Sends file(s) along with optional message contents.
     ///
     /// Refer to [`ChannelId::send_files`] for examples and more information.
     ///
-    /// The [Attach Files] and [Send Messages] permissions are required.
-    ///
-    /// **Note**: Message contents must be under 2000 unicode code points.
-    ///
     /// # Errors
     ///
-    /// If the content of the message is over the above limit, then a
-    /// [`ModelError::MessageTooLong`] will be returned, containing the number
-    /// of unicode code points over the limit.
+    /// See [`CreateMessage::execute`] for a list of possible errors, and their corresponding
+    /// reasons.
     ///
-    /// [Send Messages]: Permissions::SEND_MESSAGES
+    /// [`CreateMessage::execute`]: ../../builder/struct.CreateMessage.html#method.execute
     #[inline]
-    pub async fn send_files<'a, F, T, It>(
-        &self,
-        http: impl AsRef<Http>,
-        files: It,
-        f: F,
-    ) -> Result<Message>
-    where
-        for<'b> F: FnOnce(&'b mut CreateMessage<'a>) -> &'b mut CreateMessage<'a>,
-        T: Into<AttachmentType<'a>>,
-        It: IntoIterator<Item = T>,
-    {
-        self.id.send_files(&http, files, f).await
+    pub async fn send_files(
+        self,
+        cache_http: impl CacheHttp,
+        files: impl IntoIterator<Item = CreateAttachment>,
+        builder: CreateMessage,
+    ) -> Result<Message> {
+        self.id.send_files(cache_http, files, builder).await
     }
 
-    /// Sends a message to the channel with the given content.
+    /// Sends a message to the channel.
     ///
-    /// Refer to the documentation for [`CreateMessage`] for more information
-    /// regarding message restrictions and requirements.
+    /// Refer to the documentation for [`CreateMessage`] for information regarding content
+    /// restrictions and requirements.
     ///
     /// # Errors
     ///
-    /// Returns a [`ModelError::MessageTooLong`] if the content of the message
-    /// is over the above limit, containing the number of unicode code points
-    /// over the limit.
+    /// See [`CreateMessage::execute`] for a list of possible errors, and their corresponding
+    /// reasons.
+    ///
+    /// [`CreateMessage::execute`]: ../../builder/struct.CreateMessage.html#method.execute
     #[inline]
-    pub async fn send_message<'a, F>(&self, http: impl AsRef<Http>, f: F) -> Result<Message>
-    where
-        for<'b> F: FnOnce(&'b mut CreateMessage<'a>) -> &'b mut CreateMessage<'a>,
-    {
-        self.id.send_message(&http, f).await
+    pub async fn send_message(
+        &self,
+        cache_http: impl CacheHttp,
+        builder: CreateMessage,
+    ) -> Result<Message> {
+        self.id.send_message(cache_http, builder).await
     }
 
     /// Starts typing in the channel for an indefinite period of time.
     ///
-    /// Returns [`Typing`] that is used to trigger the typing. [`Typing::stop`] must be called
-    /// on the returned struct to stop typing. Note that on some clients, typing may persist
-    /// for a few seconds after [`Typing::stop`] is called.
-    /// Typing is also stopped when the struct is dropped.
+    /// Returns [`Typing`] that is used to trigger the typing. [`Typing::stop`] must be called on
+    /// the returned struct to stop typing. Note that on some clients, typing may persist for a few
+    /// seconds after [`Typing::stop`] is called. Typing is also stopped when the struct is
+    /// dropped.
     ///
-    /// If a message is sent while typing is triggered, the user will stop typing for a brief period
-    /// of time and then resume again until either [`Typing::stop`] is called or the struct is dropped.
+    /// If a message is sent while typing is triggered, the user will stop typing for a brief
+    /// period of time and then resume again until either [`Typing::stop`] is called or the struct
+    /// is dropped.
     ///
-    /// This should rarely be used for bots, although it is a good indicator that a
-    /// long-running command is still being processed.
+    /// This should rarely be used for bots, although it is a good indicator that a long-running
+    /// command is still being processed.
     ///
     /// ## Examples
     ///
     /// ```rust,no_run
     /// # #[cfg(feature = "cache")]
-    /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use serenity::{
-    /// #    cache::Cache,
-    /// #    http::{Http, Typing},
-    /// #    model::{ModelError, channel::PrivateChannel, id::ChannelId},
-    /// #    Result,
-    /// # };
+    /// # async fn run() {
+    /// # use serenity::{cache::Cache, http::Http, model::channel::PrivateChannel, Result};
     /// # use std::sync::Arc;
     /// #
     /// # fn long_process() {}
-    /// # let http = Arc::new(Http::new("token"));
+    /// # let http: Arc<Http> = unimplemented!();
     /// # let cache = Cache::default();
-    /// # let channel = cache.private_channel(ChannelId(7))
-    /// #    .ok_or(ModelError::ItemMissing)?;
+    /// # let channel: PrivateChannel = unimplemented!();
     /// // Initiate typing (assuming http is `Arc<Http>` and `channel` is bound)
-    /// let typing = channel.start_typing(&http)?;
+    /// let typing = channel.start_typing(&http);
     ///
     /// // Run some long-running process
     /// long_process();
     ///
     /// // Stop typing
     /// typing.stop();
-    /// #
-    /// # Ok(())
     /// # }
     /// ```
     ///
     /// # Errors
     ///
-    /// May return [`Error::Http`] if the current user cannot send a direct message
-    /// to this user.
-    pub fn start_typing(self, http: &Arc<Http>) -> Result<Typing> {
-        http.start_typing(self.id.0)
+    /// May return [`Error::Http`] if the current user cannot send a direct message to this user.
+    pub fn start_typing(self, http: &Arc<Http>) -> Typing {
+        http.start_typing(self.id)
     }
 
     /// Unpins a [`Message`] in the channel given by its Id.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the current user lacks permission,
-    /// if the message was deleted, or if the channel already has the limit of
-    /// 50 pinned messages.
+    /// Returns [`Error::Http`] if the current user lacks permission, if the message was deleted,
+    /// or if the channel already has the limit of 50 pinned messages.
     #[inline]
     pub async fn unpin(
         &self,
         http: impl AsRef<Http>,
         message_id: impl Into<MessageId>,
     ) -> Result<()> {
-        self.id.unpin(&http, message_id).await
+        self.id.unpin(http, message_id).await
     }
 }
 

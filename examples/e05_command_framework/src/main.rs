@@ -1,5 +1,4 @@
-//! Requires the 'framework' feature flag be enabled in your project's
-//! `Cargo.toml`.
+//! Requires the 'framework' feature flag be enabled in your project's `Cargo.toml`.
 //!
 //! This can be enabled by specifying the feature in the dependency section:
 //!
@@ -14,7 +13,7 @@ use std::fmt::Write;
 use std::sync::Arc;
 
 use serenity::async_trait;
-use serenity::client::bridge::gateway::{ShardId, ShardManager};
+use serenity::builder::EditChannel;
 use serenity::framework::standard::buckets::{LimitedFor, RevertBucket};
 use serenity::framework::standard::macros::{check, command, group, help, hook};
 use serenity::framework::standard::{
@@ -28,22 +27,22 @@ use serenity::framework::standard::{
     Reason,
     StandardFramework,
 };
+use serenity::gateway::ShardManager;
 use serenity::http::Http;
-use serenity::model::channel::{Channel, Message};
+use serenity::model::channel::Message;
 use serenity::model::gateway::{GatewayIntents, Ready};
 use serenity::model::id::UserId;
 use serenity::model::permissions::Permissions;
 use serenity::prelude::*;
 use serenity::utils::{content_safe, ContentSafeOptions};
-use tokio::sync::Mutex;
 
-// A container type is created for inserting into the Client's `data`, which
-// allows for data to be accessible across all events and framework commands, or
-// anywhere else that has a copy of the `data` Arc.
+// A container type is created for inserting into the Client's `data`, which allows for data to be
+// accessible across all events and framework commands, or anywhere else that has a copy of the
+// `data` Arc.
 struct ShardManagerContainer;
 
 impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<Mutex<ShardManager>>;
+    type Value = Arc<ShardManager>;
 }
 
 struct CommandCounter;
@@ -67,11 +66,10 @@ struct General;
 
 #[group]
 // Sets multiple prefixes for a group.
-// This requires us to call commands in this group
-// via `~emoji` (or `~em`) instead of just `~`.
+// This requires us to call commands in this group via `~emoji` (or `~em`) instead of just `~`.
 #[prefixes("emoji", "em")]
-// Set a description to appear if a user wants to display a single group
-// e.g. via help using the group-name or one of its prefixes.
+// Set a description to appear if a user wants to display a single group e.g. via help using the
+// group-name or one of its prefixes.
 #[description = "A group with commands providing an emoji as response."]
 // Summary only appears when listing multiple groups.
 #[summary = "Do emoji fun!"]
@@ -82,8 +80,7 @@ struct Emoji;
 
 #[group]
 // Sets a single prefix for this group.
-// So one has to call commands in this group
-// via `~math` instead of just `~`.
+// So one has to call commands in this group via `~math` instead of just `~`.
 #[prefix = "math"]
 #[commands(multiply)]
 struct Math;
@@ -97,38 +94,34 @@ struct Math;
 #[commands(slow_mode)]
 struct Owner;
 
-// The framework provides two built-in help commands for you to use.
-// But you can also make your own customized help command that forwards
-// to the behaviour of either of them.
+// The framework provides two built-in help commands for you to use. But you can also make your own
+// customized help command that forwards to the behaviour of either of them.
 #[help]
-// This replaces the information that a user can pass
-// a command-name as argument to gain specific information about it.
+// This replaces the information that a user can pass a command-name as argument to gain specific
+// information about it.
 #[individual_command_tip = "Hello! こんにちは！Hola! Bonjour! 您好! 안녕하세요~\n\n\
 If you want more information about a specific command, just pass the command as argument."]
 // Some arguments require a `{}` in order to replace it with contextual information.
 // In this case our `{}` refers to a command's name.
 #[command_not_found_text = "Could not find: `{}`."]
-// Define the maximum Levenshtein-distance between a searched command-name
-// and commands. If the distance is lower than or equal the set distance,
-// it will be displayed as a suggestion.
+// Define the maximum Levenshtein-distance between a searched command-name and commands. If the
+// distance is lower than or equal the set distance, it will be displayed as a suggestion.
 // Setting the distance to 0 will disable suggestions.
 #[max_levenshtein_distance(3)]
-// When you use sub-groups, Serenity will use the `indention_prefix` to indicate
-// how deeply an item is indented.
-// The default value is "-", it will be changed to "+".
+// When you use sub-groups, Serenity will use the `indention_prefix` to indicate how deeply an item
+// is indented. The default value is "-", it will be changed to "+".
 #[indention_prefix = "+"]
 // On another note, you can set up the help-menu-filter-behaviour.
 // Here are all possible settings shown on all possible options.
 // First case is if a user lacks permissions for a command, we can hide the command.
 #[lacking_permissions = "Hide"]
-// If the user is nothing but lacking a certain role, we just display it hence our variant is `Nothing`.
+// If the user is nothing but lacking a certain role, we just display it.
 #[lacking_role = "Nothing"]
 // The last `enum`-variant is `Strike`, which ~~strikes~~ a command.
 #[wrong_channel = "Strike"]
-// Serenity will automatically analyse and generate a hint/tip explaining the possible
-// cases of ~~strikethrough-commands~~, but only if
-// `strikethrough_commands_tip_in_{dm, guild}` aren't specified.
-// If you pass in a value, it will be displayed instead.
+// Serenity will automatically analyse and generate a hint/tip explaining the possible cases of
+// ~~strikethrough-commands~~, but only if `strikethrough_commands_tip_in_{dm, guild}` aren't
+// specified. If you pass in a value, it will be displayed instead.
 async fn my_help(
     context: &Context,
     msg: &Message,
@@ -145,9 +138,8 @@ async fn my_help(
 async fn before(ctx: &Context, msg: &Message, command_name: &str) -> bool {
     println!("Got command '{}' by user '{}'", command_name, msg.author.name);
 
-    // Increment the number of times this command has been run once. If
-    // the command's name does not exist in the counter, add a default
-    // value of 0.
+    // Increment the number of times this command has been run once. If the command's name does not
+    // exist in the counter, add a default value of 0.
     let mut data = ctx.data.write().await;
     let counter = data.get_mut::<CommandCounter>().expect("Expected CommandCounter in TypeMap.");
     let entry = counter.entry(command_name.to_string()).or_insert(0);
@@ -159,14 +151,14 @@ async fn before(ctx: &Context, msg: &Message, command_name: &str) -> bool {
 #[hook]
 async fn after(_ctx: &Context, _msg: &Message, command_name: &str, command_result: CommandResult) {
     match command_result {
-        Ok(()) => println!("Processed command '{}'", command_name),
-        Err(why) => println!("Command '{}' returned error {:?}", command_name, why),
+        Ok(()) => println!("Processed command '{command_name}'"),
+        Err(why) => println!("Command '{command_name}' returned error {why:?}"),
     }
 }
 
 #[hook]
 async fn unknown_command(_ctx: &Context, _msg: &Message, unknown_command_name: &str) {
-    println!("Could not find command named '{}'", unknown_command_name);
+    println!("Could not find command named '{unknown_command_name}'");
 }
 
 #[hook]
@@ -229,8 +221,8 @@ async fn main() {
             let mut owners = HashSet::new();
             if let Some(team) = info.team {
                 owners.insert(team.owner_user_id);
-            } else {
-                owners.insert(info.owner.id);
+            } else if let Some(owner) = &info.owner {
+                owners.insert(owner.id);
             }
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
@@ -241,69 +233,68 @@ async fn main() {
     };
 
     let framework = StandardFramework::new()
-        .configure(|c| c
-                   .with_whitespace(true)
-                   .on_mention(Some(bot_id))
-                   .prefix("~")
-                   // In this case, if "," would be first, a message would never
-                   // be delimited at ", ", forcing you to trim your arguments if you
-                   // want to avoid whitespaces at the start of each.
-                   .delimiters(vec![", ", ","])
-                   // Sets the bot's owners. These will be used for commands that
-                   // are owners only.
-                   .owners(owners))
-
-    // Set a function to be called prior to each command execution. This
-    // provides the context of the command, the message that was received,
-    // and the full name of the command that will be called.
-    //
-    // Avoid using this to determine whether a specific command should be
-    // executed. Instead, prefer using the `#[check]` macro which
-    // gives you this functionality.
-    //
-    // **Note**: Async closures are unstable, you may use them in your
-    // application if you are fine using nightly Rust.
-    // If not, we need to provide the function identifiers to the
-    // hook-functions (before, after, normal, ...).
+        // Set a function to be called prior to each command execution. This provides the context
+        // of the command, the message that was received, and the full name of the command that
+        // will be called.
+        //
+        // Avoid using this to determine whether a specific command should be executed. Instead,
+        // prefer using the `#[check]` macro which gives you this functionality.
+        //
+        // **Note**: Async closures are unstable, you may use them in your application if you are
+        // fine using nightly Rust. If not, we need to provide the function identifiers to the
+        // hook-functions (before, after, normal, ...).
         .before(before)
-    // Similar to `before`, except will be called directly _after_
-    // command execution.
+        // Similar to `before`, except will be called directly _after_ command execution.
         .after(after)
-    // Set a function that's called whenever an attempted command-call's
-    // command could not be found.
+        // Set a function that's called whenever an attempted command-call's command could not be
+        // found.
         .unrecognised_command(unknown_command)
-    // Set a function that's called whenever a message is not a command.
+        // Set a function that's called whenever a message is not a command.
         .normal_message(normal_message)
-    // Set a function that's called whenever a command's execution didn't complete for one
-    // reason or another. For example, when a user has exceeded a rate-limit or a command
-    // can only be performed by the bot owner.
+        // Set a function that's called whenever a command's execution didn't complete for one
+        // reason or another. For example, when a user has exceeded a rate-limit or a command can
+        // only be performed by the bot owner.
         .on_dispatch_error(dispatch_error)
-    // Can't be used more than once per 5 seconds:
+        // Can't be used more than once per 5 seconds:
         .bucket("emoji", |b| b.delay(5)).await
-    // Can't be used more than 2 times per 30 seconds, with a 5 second delay applying per channel.
-    // Optionally `await_ratelimits` will delay until the command can be executed instead of
-    // cancelling the command invocation.
-        .bucket("complicated", |b| b.limit(2).time_span(30).delay(5)
-            // The target each bucket will apply to.
-            .limit_for(LimitedFor::Channel)
-            // The maximum amount of command invocations that can be delayed per target.
-            // Setting this to 0 (default) will never await/delay commands and cancel the invocation.
-            .await_ratelimits(1)
-            // A function to call when a rate limit leads to a delay.
-            .delay_action(delay_action)).await
-    // The `#[group]` macro generates `static` instances of the options set for the group.
-    // They're made in the pattern: `#name_GROUP` for the group instance and `#name_GROUP_OPTIONS`.
-    // #name is turned all uppercase
+        // Can't be used more than 2 times per 30 seconds, with a 5 second delay applying per
+        // channel. Optionally `await_ratelimits` will delay until the command can be executed
+        // instead of cancelling the command invocation.
+        .bucket("complicated", |b| {
+            b.limit(2).time_span(30).delay(5)
+                // The target each bucket will apply to.
+                .limit_for(LimitedFor::Channel)
+                // The maximum amount of command invocations that can be delayed per target.
+                // Setting this to 0 (default) will never await/delay commands and cancel the invocation.
+                .await_ratelimits(1)
+                // A function to call when a rate limit leads to a delay.
+                .delay_action(delay_action)
+        }).await
+        // The `#[group]` macro generates `static` instances of the options set for the group.
+        // They're made in the pattern: `#name_GROUP` for the group instance and `#name_GROUP_OPTIONS`.
+        // #name is turned all uppercase
         .help(&MY_HELP)
         .group(&GENERAL_GROUP)
         .group(&EMOJI_GROUP)
         .group(&MATH_GROUP)
         .group(&OWNER_GROUP);
 
-    // For this example to run properly, the "Presence Intent" and "Server Members Intent"
-    // options need to be enabled.
-    // These are needed so the `required_permissions` macro works on the commands that need to
-    // use it.
+    framework.configure(|c| {
+        c.with_whitespace(true)
+            .on_mention(Some(bot_id))
+            .prefix("~")
+            // In this case, if "," would be first, a message would never be delimited at ", ",
+            // forcing you to trim your arguments if you want to avoid whitespaces at the start of
+            // each.
+            .delimiters(vec![", ", ","])
+            // Sets the bot's owners. These will be used for commands that are owners only.
+            .owners(owners)
+    });
+
+    // For this example to run properly, the "Presence Intent" and "Server Members Intent" options
+    // need to be enabled.
+    // These are needed so the `required_permissions` macro works on the commands that need to use
+    // it.
     // You will need to enable these 2 options on the bot application, and possibly wait up to 5
     // minutes.
     let intents = GatewayIntents::all();
@@ -320,7 +311,7 @@ async fn main() {
     }
 
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }
 
@@ -335,8 +326,8 @@ async fn commands(ctx: &Context, msg: &Message) -> CommandResult {
     let data = ctx.data.read().await;
     let counter = data.get::<CommandCounter>().expect("Expected CommandCounter in TypeMap.");
 
-    for (k, v) in counter {
-        writeln!(contents, "- {name}: {amount}", name = k, amount = v)?;
+    for (name, amount) in counter {
+        writeln!(contents, "- {name}: {amount}")?;
     }
 
     msg.channel_id.say(&ctx.http, &contents).await?;
@@ -344,8 +335,8 @@ async fn commands(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-// Repeats what the user passed as argument but ensures that user and role
-// mentions are replaced with a safe textual alternative.
+// Repeats what the user passed as argument but ensures that user and role mentions are replaced
+// with a safe textual alternative.
 // In this example channel mentions are excluded via the `ContentSafeOptions`.
 #[command]
 async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
@@ -354,11 +345,10 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             let settings = if let Some(guild_id) = msg.guild_id {
                 // By default roles, users, and channel mentions are cleaned.
                 ContentSafeOptions::default()
-                    // We do not want to clean channel mentions as they
-                    // do not ping users.
+                    // We do not want to clean channal mentions as they do not ping users.
                     .clean_channel(false)
-                    // If it's a guild channel, we want mentioned users to be displayed
-                    // as their display name.
+                    // If it's a guild channel, we want mentioned users to be displayed as their
+                    // display name.
                     .display_as_member_from(guild_id)
             } else {
                 ContentSafeOptions::default().clean_channel(false).clean_role(false)
@@ -379,11 +369,11 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
 // A function which acts as a "check", to determine whether to call a command.
 //
-// In this case, this command checks to ensure you are the owner of the message
-// in order for the command to be executed. If the check fails, the command is
-// not called.
+// In this case, this command checks to ensure you are the owner of the message in order for the
+// command to be executed. If the check fails, the command is not called.
 #[check]
 #[name = "Owner"]
+#[rustfmt::skip]
 async fn owner_check(
     _: &Context,
     msg: &Message,
@@ -393,16 +383,16 @@ async fn owner_check(
     // Replace 7 with your ID to make this check pass.
     //
     // 1. If you want to pass a reason alongside failure you can do:
-    // `Reason::User("Lacked admin permission.".to_string())`,
+    //    `Reason::User("Lacked admin permission.".to_string())`,
     //
     // 2. If you want to mark it as something you want to log only:
-    // `Reason::Log("User lacked admin permission.".to_string())`,
+    //    `Reason::Log("User lacked admin permission.".to_string())`,
     //
     // 3. If the check's failure origin is unknown you can mark it as such:
-    // `Reason::Unknown`
+    //    `Reason::Unknown`
     //
     // 4. If you want log for your system and for the user, use:
-    // `Reason::UserAndLog { user, log }`
+    //    `Reason::UserAndLog { user, log }`
     if msg.author.id != 7 {
         return Err(Reason::User("Lacked owner permission".to_string()));
     }
@@ -421,24 +411,15 @@ async fn some_long_command(ctx: &Context, msg: &Message, args: Args) -> CommandR
 // Limits the usage of this command to roles named:
 #[allowed_roles("mods", "ultimate neko")]
 async fn about_role(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let potential_role_name = args.rest();
+    let role_name = args.rest();
+    let to_send = match msg.guild(&ctx.cache).as_deref().and_then(|g| g.role_by_name(role_name)) {
+        Some(role_id) => format!("Role-ID: {role_id}"),
+        None => format!("Could not find role name: {role_name:?}"),
+    };
 
-    if let Some(guild) = msg.guild(&ctx.cache) {
-        // `role_by_name()` allows us to attempt attaining a reference to a role
-        // via its name.
-        if let Some(role) = guild.role_by_name(potential_role_name) {
-            if let Err(why) = msg.channel_id.say(&ctx.http, &format!("Role-ID: {}", role.id)).await
-            {
-                println!("Error sending message: {:?}", why);
-            }
-
-            return Ok(());
-        }
+    if let Err(why) = msg.channel_id.say(&ctx.http, to_send).await {
+        println!("Error sending message: {why:?}");
     }
-
-    msg.channel_id
-        .say(&ctx.http, format!("Could not find role named: {:?}", potential_role_name))
-        .await?;
 
     Ok(())
 }
@@ -466,8 +447,8 @@ async fn about(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn latency(ctx: &Context, msg: &Message) -> CommandResult {
-    // The shard manager is an interface for mutating, stopping, restarting, and
-    // retrieving information about shards.
+    // The shard manager is an interface for mutating, stopping, restarting, and retrieving
+    // information about shards.
     let data = ctx.data.read().await;
 
     let shard_manager = match data.get::<ShardManagerContainer>() {
@@ -479,13 +460,11 @@ async fn latency(ctx: &Context, msg: &Message) -> CommandResult {
         },
     };
 
-    let manager = shard_manager.lock().await;
-    let runners = manager.runners.lock().await;
+    let runners = shard_manager.runners.lock().await;
 
-    // Shards are backed by a "shard runner" responsible for processing events
-    // over the shard, so we'll get the information about the shard runner for
-    // the shard this command was sent over.
-    let runner = match runners.get(&ShardId(ctx.shard_id)) {
+    // Shards are backed by a "shard runner" responsible for processing events over the shard, so
+    // we'll get the information about the shard runner for the shard this command was sent over.
+    let runner = match runners.get(&ctx.shard_id) {
         Some(runner) => runner,
         None => {
             msg.reply(ctx, "No shard found").await?;
@@ -545,16 +524,15 @@ async fn bird(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
-// We could also use
-// #[required_permissions(ADMINISTRATOR)]
-// but that would not let us reply when it fails.
+// We could also use #[required_permissions(ADMINISTRATOR)] but that would not let us reply when it
+// fails.
 #[command]
 async fn am_i_admin(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     if let Some(member) = &msg.member {
         for role in &member.roles {
             if role
                 .to_role_cached(&ctx.cache)
-                .map_or(false, |r| r.has_permission(Permissions::ADMINISTRATOR))
+                .is_some_and(|r| r.has_permission(Permissions::ADMINISTRATOR))
             {
                 msg.channel_id.say(&ctx.http, "Yes, you are.").await?;
 
@@ -570,19 +548,18 @@ async fn am_i_admin(ctx: &Context, msg: &Message, _args: Args) -> CommandResult 
 
 #[command]
 async fn slow_mode(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let say_content = if let Ok(slow_mode_rate_seconds) = args.single::<u64>() {
-        if let Err(why) =
-            msg.channel_id.edit(&ctx.http, |c| c.rate_limit_per_user(slow_mode_rate_seconds)).await
-        {
-            println!("Error setting channel's slow mode rate: {:?}", why);
+    let say_content = if let Ok(slow_mode_rate_seconds) = args.single::<u16>() {
+        let builder = EditChannel::new().rate_limit_per_user(slow_mode_rate_seconds);
+        if let Err(why) = msg.channel_id.edit(&ctx.http, builder).await {
+            println!("Error setting channel's slow mode rate: {why:?}");
 
-            format!("Failed to set slow mode to `{}` seconds.", slow_mode_rate_seconds)
+            format!("Failed to set slow mode to `{slow_mode_rate_seconds}` seconds.")
         } else {
-            format!("Successfully set slow mode rate to `{}` seconds.", slow_mode_rate_seconds)
+            format!("Successfully set slow mode rate to `{slow_mode_rate_seconds}` seconds.")
         }
-    } else if let Some(Channel::Guild(channel)) = msg.channel_id.to_channel_cached(&ctx.cache) {
+    } else if let Some(channel) = msg.channel_id.to_channel_cached(&ctx.cache) {
         let slow_mode_rate = channel.rate_limit_per_user.unwrap_or(0);
-        format!("Current slow mode rate is `{}` seconds.", slow_mode_rate)
+        format!("Current slow mode rate is `{slow_mode_rate}` seconds.")
     } else {
         "Failed to find channel in cache.".to_string()
     };
@@ -592,8 +569,8 @@ async fn slow_mode(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     Ok(())
 }
 
-// A command can have sub-commands, just like in command lines tools.
-// Imagine `cargo help` and `cargo help run`.
+// A command can have sub-commands, just like in command lines tools. Imagine `cargo help` and
+// `cargo help run`.
 #[command("upper")]
 #[sub_commands(sub)]
 async fn upper_command(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {

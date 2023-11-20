@@ -7,7 +7,6 @@ use crate::prelude::*;
 /// Error that can be returned from [`Role::convert`].
 #[non_exhaustive]
 #[derive(Debug)]
-#[allow(clippy::enum_variant_names)]
 pub enum RoleParseError {
     /// When the operation was invoked outside a guild.
     NotInGuild,
@@ -53,7 +52,7 @@ impl ArgumentConvert for Role {
     type Err = RoleParseError;
 
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         guild_id: Option<GuildId>,
         _channel_id: Option<ChannelId>,
         s: &str,
@@ -61,17 +60,18 @@ impl ArgumentConvert for Role {
         let guild_id = guild_id.ok_or(RoleParseError::NotInGuild)?;
 
         #[cfg(feature = "cache")]
-        let roles = ctx.cache.guild_roles(guild_id).ok_or(RoleParseError::NotInCache)?;
+        let roles =
+            ctx.cache().and_then(|c| c.guild_roles(guild_id)).ok_or(RoleParseError::NotInCache)?;
         #[cfg(not(feature = "cache"))]
-        let roles = ctx.http.get_guild_roles(guild_id.0).await.map_err(RoleParseError::Http)?;
+        let roles = ctx.http().get_guild_roles(guild_id).await.map_err(RoleParseError::Http)?;
 
-        if let Some(role_id) = s.parse::<u64>().ok().or_else(|| crate::utils::parse_role(s)) {
+        if let Some(role_id) = s.parse().ok().or_else(|| crate::utils::parse_role_mention(s)) {
             #[cfg(feature = "cache")]
-            if let Some(role) = roles.get(&RoleId(role_id)) {
+            if let Some(role) = roles.get(&role_id) {
                 return Ok(role.clone());
             }
             #[cfg(not(feature = "cache"))]
-            if let Some(role) = roles.iter().find(|role| role.id.0 == role_id) {
+            if let Some(role) = roles.iter().find(|role| role.id == role_id) {
                 return Ok(role.clone());
             }
         }

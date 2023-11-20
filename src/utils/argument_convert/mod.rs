@@ -10,7 +10,10 @@ pub use user::*;
 mod channel;
 pub use channel::*;
 
+// From HTTP you can only get PartialGuild; for Guild you need gateway and cache
+#[cfg(feature = "cache")]
 mod guild;
+#[cfg(feature = "cache")]
 pub use guild::*;
 
 mod role;
@@ -19,14 +22,14 @@ pub use role::*;
 mod emoji;
 pub use emoji::*;
 
+use super::DOMAINS;
 use crate::model::prelude::*;
 use crate::prelude::*;
 
 /// Parse a value from a string in context of a received message.
 ///
-/// This trait is a superset of [`std::str::FromStr`]. The
-/// difference is that this trait aims to support serenity-specific Discord types like [`Member`]
-/// or [`Message`].
+/// This trait is a superset of [`std::str::FromStr`]. The difference is that this trait aims to
+/// support serenity-specific Discord types like [`Member`] or [`Message`].
 ///
 /// Trait implementations may do network requests as part of their parsing procedure.
 ///
@@ -38,7 +41,7 @@ pub trait ArgumentConvert: Sized {
 
     /// Parses a string `s` as a command parameter of this type.
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         guild_id: Option<GuildId>,
         channel_id: Option<ChannelId>,
         s: &str,
@@ -50,7 +53,7 @@ impl<T: std::str::FromStr> ArgumentConvert for T {
     type Err = <T as std::str::FromStr>::Err;
 
     async fn convert(
-        _: &Context,
+        _: impl CacheHttp,
         _: Option<GuildId>,
         _: Option<ChannelId>,
         s: &str,
@@ -59,8 +62,8 @@ impl<T: std::str::FromStr> ArgumentConvert for T {
     }
 }
 
-// The following few parse_XXX methods are in here (parse.rs) because they need to be gated
-// behind the model feature and it's just convenient to put them here for that
+// The following few parse_XXX methods are in here (parse.rs) because they need to be gated behind
+// the model feature and it's just convenient to put them here for that
 
 /// Retrieves IDs from "{channel ID}-{message ID}" (retrieved by shift-clicking on "Copy ID").
 ///
@@ -73,7 +76,7 @@ impl<T: std::str::FromStr> ArgumentConvert for T {
 ///
 /// assert_eq!(
 ///     parse_message_id_pair("673965002805477386-842482646604972082"),
-///     Some((ChannelId(673965002805477386), MessageId(842482646604972082))),
+///     Some((ChannelId::new(673965002805477386), MessageId::new(842482646604972082))),
 /// );
 /// assert_eq!(
 ///     parse_message_id_pair("673965002805477386-842482646604972082-472029906943868929"),
@@ -83,8 +86,8 @@ impl<T: std::str::FromStr> ArgumentConvert for T {
 #[must_use]
 pub fn parse_message_id_pair(s: &str) -> Option<(ChannelId, MessageId)> {
     let mut parts = s.splitn(2, '-');
-    let channel_id = ChannelId(parts.next()?.parse().ok()?);
-    let message_id = MessageId(parts.next()?.parse().ok()?);
+    let channel_id = parts.next()?.parse().ok()?;
+    let message_id = parts.next()?.parse().ok()?;
     Some((channel_id, message_id))
 }
 
@@ -102,18 +105,34 @@ pub fn parse_message_id_pair(s: &str) -> Option<(ChannelId, MessageId)> {
 ///         "https://discord.com/channels/381880193251409931/381880193700069377/806164913558781963"
 ///     ),
 ///     Some((
-///         GuildId(381880193251409931),
-///         ChannelId(381880193700069377),
-///         MessageId(806164913558781963),
+///         GuildId::new(381880193251409931),
+///         ChannelId::new(381880193700069377),
+///         MessageId::new(806164913558781963),
+///     )),
+/// );
+/// assert_eq!(
+///     parse_message_url(
+///         "https://canary.discord.com/channels/381880193251409931/381880193700069377/806164913558781963"
+///     ),
+///     Some((
+///         GuildId::new(381880193251409931),
+///         ChannelId::new(381880193700069377),
+///         MessageId::new(806164913558781963),
 ///     )),
 /// );
 /// assert_eq!(parse_message_url("https://google.com"), None);
 /// ```
 #[must_use]
 pub fn parse_message_url(s: &str) -> Option<(GuildId, ChannelId, MessageId)> {
-    let mut parts = s.strip_prefix("https://discord.com/channels/")?.splitn(3, '/');
-    let guild_id = GuildId(parts.next()?.parse().ok()?);
-    let channel_id = ChannelId(parts.next()?.parse().ok()?);
-    let message_id = MessageId(parts.next()?.parse().ok()?);
-    Some((guild_id, channel_id, message_id))
+    for domain in DOMAINS {
+        if let Some(parts) = s.strip_prefix(&format!("https://{domain}/channels/")) {
+            let mut parts = parts.splitn(3, '/');
+
+            let guild_id = parts.next()?.parse().ok()?;
+            let channel_id = parts.next()?.parse().ok()?;
+            let message_id = parts.next()?.parse().ok()?;
+            return Some((guild_id, channel_id, message_id));
+        }
+    }
+    None
 }

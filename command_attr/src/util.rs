@@ -181,7 +181,7 @@ pub fn generate_type_validation(have: &Type, expect: &Type) -> syn::Stmt {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeclarFor {
     Command,
     Help,
@@ -198,7 +198,7 @@ pub fn create_declaration_validations(fun: &mut CommandFun, dec_for: DeclarFor) 
     if fun.args.len() > len {
         return Err(Error::new(
             fun.args.last().unwrap().span(),
-            format_args!("function's arity exceeds more than {} arguments", len),
+            format_args!("function's arity exceeds more than {len} arguments"),
         ));
     }
 

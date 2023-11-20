@@ -1,21 +1,19 @@
-use crate::json::NULL;
 use crate::model::prelude::*;
 use crate::model::Timestamp;
 
-/// A builder for constructing a personal [`Message`] instance.
-/// This can be useful for emitting a manual [`dispatch`] to the framework,
-/// but you don't have a message in hand, or just have a fragment of its data.
+/// A builder for constructing a personal [`Message`] instance. This can be useful for emitting a
+/// manual [`dispatch`] to the framework, but you don't have a message in hand, or just have a
+/// fragment of its data.
 ///
 /// [`dispatch`]: crate::framework::Framework::dispatch
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct CustomMessage {
     msg: Message,
 }
 
 impl CustomMessage {
-    /// Constructs a new instance of this builder, alongside a message
-    /// with dummy data. Use the methods to replace the individual bits
-    /// of this message with valid data.
+    /// Constructs a new instance of this builder, alongside a message with dummy data. Use the
+    /// methods to replace the individual bits of this message with valid data.
     #[inline]
     #[must_use]
     pub fn new() -> Self {
@@ -24,7 +22,7 @@ impl CustomMessage {
 
     /// Assign the dummy message a proper ID for identification.
     ///
-    /// If not used, the default value is `MessageId(0)`.
+    /// If not used, the default value is `MessageId::new(1)`.
     #[inline]
     #[must_use]
     pub fn id(&mut self, id: MessageId) -> &mut Self {
@@ -37,10 +35,7 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty vector (`Vec::default()`).
     #[inline]
-    pub fn attachments<It>(&mut self, attachments: It) -> &mut Self
-    where
-        It: IntoIterator<Item = Attachment>,
-    {
+    pub fn attachments(&mut self, attachments: impl IntoIterator<Item = Attachment>) -> &mut Self {
         self.msg.attachments = attachments.into_iter().collect();
 
         self
@@ -58,7 +53,7 @@ impl CustomMessage {
 
     /// Assign the dummy message its origin channel's ID.
     ///
-    /// If not used, the default value is `ChannelId(0)`.
+    /// If not used, the default value is `ChannelId::new(1)`.
     #[inline]
     pub fn channel_id(&mut self, channel_id: ChannelId) -> &mut Self {
         self.msg.channel_id = channel_id;
@@ -70,8 +65,8 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty string (`String::default()`).
     #[inline]
-    pub fn content<T: ToString>(&mut self, s: T) -> &mut Self {
-        self.msg.content = s.to_string();
+    pub fn content(&mut self, s: impl Into<String>) -> &mut Self {
+        self.msg.content = s.into();
 
         self
     }
@@ -90,10 +85,7 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty vector (`Vec::default()`).
     #[inline]
-    pub fn embeds<It>(&mut self, embeds: It) -> &mut Self
-    where
-        It: IntoIterator<Item = Embed>,
-    {
+    pub fn embeds(&mut self, embeds: impl IntoIterator<Item = Embed>) -> &mut Self {
         self.msg.embeds = embeds.into_iter().collect();
 
         self
@@ -126,7 +118,7 @@ impl CustomMessage {
     /// [author]: Self::author
     #[inline]
     pub fn member(&mut self, member: PartialMember) -> &mut Self {
-        self.msg.member = Some(member);
+        self.msg.member = Some(Box::new(member));
 
         self
     }
@@ -145,10 +137,7 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty vector (`Vec::default()`).
     #[inline]
-    pub fn mention_roles<It>(&mut self, roles: It) -> &mut Self
-    where
-        It: IntoIterator<Item = RoleId>,
-    {
+    pub fn mention_roles(&mut self, roles: impl IntoIterator<Item = RoleId>) -> &mut Self {
         self.msg.mention_roles = roles.into_iter().collect();
 
         self
@@ -158,10 +147,7 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty vector (`Vec::default()`).
     #[inline]
-    pub fn mentions<It>(&mut self, mentions: It) -> &mut Self
-    where
-        It: IntoIterator<Item = User>,
-    {
+    pub fn mentions(&mut self, mentions: impl IntoIterator<Item = User>) -> &mut Self {
         self.msg.mentions = mentions.into_iter().collect();
 
         self
@@ -181,10 +167,7 @@ impl CustomMessage {
     ///
     /// If not used, the default value is an empty vector (`Vec::default()`).
     #[inline]
-    pub fn reactions<It>(&mut self, reactions: It) -> &mut Self
-    where
-        It: IntoIterator<Item = MessageReaction>,
-    {
+    pub fn reactions(&mut self, reactions: impl IntoIterator<Item = MessageReaction>) -> &mut Self {
         self.msg.reactions = reactions.into_iter().collect();
 
         self
@@ -225,60 +208,5 @@ impl CustomMessage {
     #[must_use]
     pub fn build(self) -> Message {
         self.msg
-    }
-}
-
-impl Default for CustomMessage {
-    #[inline]
-    fn default() -> Self {
-        CustomMessage {
-            msg: dummy_message(),
-        }
-    }
-}
-
-#[inline]
-fn dummy_message() -> Message {
-    Message {
-        id: MessageId::default(),
-        attachments: Vec::new(),
-        author: User {
-            id: UserId::default(),
-            avatar: None,
-            bot: false,
-            discriminator: 0x0000,
-            name: String::new(),
-            public_flags: None,
-            banner: None,
-            accent_colour: None,
-            member: None,
-        },
-        channel_id: ChannelId::default(),
-        content: String::new(),
-        edited_timestamp: None,
-        embeds: Vec::new(),
-        guild_id: None,
-        kind: MessageType::Regular,
-        member: None,
-        mention_everyone: false,
-        mention_roles: Vec::new(),
-        mention_channels: Vec::new(),
-        mentions: Vec::new(),
-        nonce: NULL,
-        pinned: false,
-        reactions: Vec::new(),
-        tts: false,
-        webhook_id: None,
-        timestamp: Timestamp::now(),
-        activity: None,
-        application: None,
-        message_reference: None,
-        flags: None,
-        sticker_items: Vec::new(),
-        referenced_message: None,
-        interaction: None,
-        components: vec![],
-        application_id: None,
-        thread: None,
     }
 }

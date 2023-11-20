@@ -10,12 +10,10 @@ use crate::utils;
 
 /// Allows something - such as a channel or role - to be mentioned in a message.
 pub trait Mentionable {
-    /// Creates a [`Mention`] that will be able to notify or create a link to the
-    /// item.
+    /// Creates a [`Mention`] that will be able to notify or create a link to the item.
     ///
-    /// [`Mention`] implements [`Display`], so [`ToString::to_string()`] can
-    /// be called on it, or inserted directly into a [`format_args!`] type of
-    /// macro.
+    /// [`Mention`] implements [`Display`], so [`ToString::to_string()`] can be called on it, or
+    /// inserted directly into a [`format_args!`] type of macro.
     ///
     /// [`Display`]: fmt::Display
     ///
@@ -23,6 +21,7 @@ pub trait Mentionable {
     ///
     /// ```
     /// # #[cfg(feature = "client")] {
+    /// # use serenity::builder::CreateMessage;
     /// # use serenity::model::guild::Member;
     /// # use serenity::model::channel::GuildChannel;
     /// # use serenity::model::id::ChannelId;
@@ -35,18 +34,14 @@ pub trait Mentionable {
     ///     to_channel: GuildChannel,
     ///     rules_channel: ChannelId,
     /// ) -> Result<(), Error> {
-    ///     to_channel
-    ///         .id
-    ///         .send_message(ctx, |m| {
-    ///             m.content(format_args!(
-    ///                 "Hi {member}, welcome to the server! \
-    ///                 Please refer to {rules} for our code of conduct, \
-    ///                 and enjoy your stay.",
-    ///                 member = member.mention(),
-    ///                 rules = rules_channel.mention(),
-    ///             ))
-    ///         })
-    ///         .await?;
+    ///     let builder = CreateMessage::new().content(format!(
+    ///         "Hi {member}, welcome to the server! \
+    ///         Please refer to {rules} for our code of conduct, \
+    ///         and enjoy your stay.",
+    ///         member = member.mention(),
+    ///         rules = rules_channel.mention(),
+    ///     ));
+    ///     to_channel.id.send_message(ctx, builder).await?;
     ///     Ok(())
     /// }
     /// # }
@@ -54,9 +49,9 @@ pub trait Mentionable {
     /// ```
     /// # use serenity::model::id::{RoleId, ChannelId, UserId};
     /// use serenity::model::mention::Mentionable;
-    /// let user: UserId = 1.into();
-    /// let channel: ChannelId = 2.into();
-    /// let role: RoleId = 3.into();
+    /// let user = UserId::new(1);
+    /// let channel = ChannelId::new(2);
+    /// let role = RoleId::new(3);
     /// assert_eq!(
     ///     "<@1> <#2> <@&3>",
     ///     format!("{} {} {}", user.mention(), channel.mention(), role.mention(),),
@@ -65,13 +60,11 @@ pub trait Mentionable {
     fn mention(&self) -> Mention;
 }
 
-/// A struct that represents some way to insert a notification, link, or emoji
-/// into a message.
+/// A struct that represents some way to insert a notification, link, or emoji into a message.
 ///
-/// [`Display`] is the primary way of utilizing a [`Mention`], either in a
-/// [`format_args!`] type of macro or with [`ToString::to_string()`]. A
-/// [`Mention`] is created using [`Mentionable::mention()`], or with
-/// [`From`]/[`Into`].
+/// [`Display`] is the primary way of utilizing a [`Mention`], either in a [`format_args!`] type of
+/// macro or with [`ToString::to_string()`]. A [`Mention`] is created using
+/// [`Mentionable::mention()`], or with [`From`]/[`Into`].
 ///
 /// [`Display`]: fmt::Display
 ///
@@ -80,20 +73,19 @@ pub trait Mentionable {
 /// ```
 /// # use serenity::model::id::{RoleId, ChannelId, UserId};
 /// use serenity::model::mention::Mention;
-/// let user: UserId = 1.into();
-/// let channel: ChannelId = 2.into();
-/// let role: RoleId = 3.into();
+/// let user = UserId::new(1);
+/// let channel = ChannelId::new(2);
+/// let role = RoleId::new(3);
 /// assert_eq!(
 ///     "<@1> <#2> <@&3>",
 ///     format!("{} {} {}", Mention::from(user), Mention::from(channel), Mention::from(role),),
 /// )
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Mention {
     Channel(ChannelId),
     Role(RoleId),
     User(UserId),
-    Emoji(EmojiId, bool),
 }
 
 macro_rules! mention {
@@ -111,19 +103,14 @@ mention!(value:
     ChannelId, Mention::Channel(value);
     RoleId, Mention::Role(value);
     UserId, Mention::User(value);
-    EmojiId, Mention::Emoji(value, false);
-    (EmojiId, bool), Mention::Emoji(value.0, value.1);
 );
 
 impl fmt::Display for Mention {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Mention::Channel(id) => f.write_fmt(format_args!("<#{}>", id.0)),
-            Mention::Role(id) => f.write_fmt(format_args!("<@&{}>", id.0)),
-            Mention::User(id) => f.write_fmt(format_args!("<@{}>", id.0)),
-            Mention::Emoji(id, animated) => {
-                f.write_fmt(format_args!("<{}:omitted:{}>", if animated { "a" } else { "" }, id.0,))
-            },
+            Mention::Channel(id) => f.write_fmt(format_args!("<#{id}>")),
+            Mention::Role(id) => f.write_fmt(format_args!("<@&{id}>")),
+            Mention::User(id) => f.write_fmt(format_args!("<@{id}>")),
         }
     }
 }
@@ -149,14 +136,12 @@ impl FromStr for Mention {
     type Err = MentionParseError;
 
     fn from_str(s: &str) -> StdResult<Self, Self::Err> {
-        let m = if let Some(id) = utils::parse_channel(s) {
-            ChannelId(id).mention()
-        } else if let Some(id) = utils::parse_role(s) {
-            RoleId(id).mention()
-        } else if let Some(id) = utils::parse_username(s) {
-            UserId(id).mention()
-        } else if let Some(emoji_ident) = utils::parse_emoji(s) {
-            emoji_ident.mention()
+        let m = if let Some(id) = utils::parse_channel_mention(s) {
+            id.mention()
+        } else if let Some(id) = utils::parse_role_mention(s) {
+            id.mention()
+        } else if let Some(id) = utils::parse_user_mention(s) {
+            id.mention()
         } else {
             return Err(MentionParseError::InvalidMention);
         };
@@ -175,7 +160,7 @@ where
 }
 
 macro_rules! mentionable {
-    ($i:ident: $($t:ty, $e:expr;)*) => {$(
+    ($i:ident: $t:ty, $e:expr) => {
         impl Mentionable for $t {
             #[inline(always)]
             fn mention(&self) -> Mention {
@@ -183,117 +168,46 @@ macro_rules! mentionable {
                 $e.into()
             }
         }
-    )*};
+    };
 }
 
 #[cfg(feature = "model")]
-mentionable!(value: Channel, value.id(););
+mentionable!(value: Channel, value.id());
 
-mentionable!(value:
-    ChannelCategory, value.id;
-    GuildChannel, value.id;
-    PrivateChannel, value.id;
-    CurrentUser, value.id;
-    Member, value.user.id;
-    User, value.id;
-    Role, value.id;
-    Emoji, (value.id, value.animated);
-    EmojiIdentifier, (value.id, value.animated);
-);
+mentionable!(value: GuildChannel, value.id);
+mentionable!(value: PrivateChannel, value.id);
+mentionable!(value: Member, value.user.id);
+mentionable!(value: CurrentUser, value.id);
+mentionable!(value: User, value.id);
+mentionable!(value: Role, value.id);
 
 #[cfg(feature = "utils")]
 #[cfg(test)]
 mod test {
     use crate::model::prelude::*;
-    use crate::utils::Colour;
 
     #[test]
     fn test_mention() {
         let channel = Channel::Guild(GuildChannel {
-            bitrate: None,
-            parent_id: None,
-            guild_id: GuildId(1),
-            kind: ChannelType::Text,
-            id: ChannelId(4),
-            owner_id: None,
-            last_message_id: None,
-            last_pin_timestamp: None,
-            name: "a".to_string(),
-            permission_overwrites: vec![],
-            position: 1,
-            topic: None,
-            user_limit: None,
-            nsfw: false,
-            rate_limit_per_user: Some(0),
-            rtc_region: None,
-            video_quality_mode: None,
-            message_count: None,
-            member_count: None,
-            thread_metadata: None,
-            member: None,
-            default_auto_archive_duration: None,
-            flags: ChannelFlags::empty(),
-            total_message_sent: None,
-            available_tags: Vec::new(),
-            applied_tags: Vec::new(),
-            default_reaction_emoji: None,
-            default_thread_rate_limit_per_user: None,
-            default_sort_order: None,
+            id: ChannelId::new(4),
+            ..Default::default()
         });
-        let emoji = Emoji {
-            animated: false,
-            available: true,
-            id: EmojiId(5),
-            name: "a".to_string(),
-            managed: true,
-            require_colons: true,
-            roles: vec![],
-            user: None,
-        };
         let role = Role {
-            id: RoleId(2),
-            guild_id: GuildId(1),
-            colour: Colour::ROSEWATER,
-            hoist: false,
-            managed: false,
-            mentionable: false,
-            name: "fake role".to_string(),
-            permissions: Permissions::empty(),
-            position: 1,
-            tags: RoleTags::default(),
-            icon: None,
-            unicode_emoji: None,
+            id: RoleId::new(2),
+            ..Default::default()
         };
         let user = User {
-            id: UserId(6),
-            avatar: None,
-            bot: false,
-            discriminator: 4132,
-            name: "fake".to_string(),
-            public_flags: None,
-            banner: None,
-            accent_colour: None,
-            member: None,
+            id: UserId::new(6),
+            ..Default::default()
         };
         let member = Member {
-            deaf: false,
-            guild_id: GuildId(2),
-            joined_at: None,
-            mute: false,
-            nick: None,
-            roles: vec![],
             user: user.clone(),
-            pending: false,
-            premium_since: None,
-            permissions: None,
-            avatar: None,
-            communication_disabled_until: None,
+            ..Default::default()
         };
 
-        assert_eq!(ChannelId(1).mention().to_string(), "<#1>");
+        assert_eq!(ChannelId::new(1).mention().to_string(), "<#1>");
         #[cfg(feature = "model")]
         assert_eq!(channel.mention().to_string(), "<#4>");
-        assert_eq!(emoji.mention().to_string(), "<:omitted:5>");
         assert_eq!(member.mention().to_string(), "<@6>");
         assert_eq!(role.mention().to_string(), "<@&2>");
         assert_eq!(role.id.mention().to_string(), "<@&2>");

@@ -1,11 +1,12 @@
-use crate::model::channel::ChannelType;
+use crate::model::channel::{ChannelType, ThreadMetadata};
 use crate::model::id::{ChannelId, WebhookId};
 use crate::model::Permissions;
 
 /// A container for any partial channel.
 ///
-/// [Discord docs](https://discord.com/developers/docs/resources/channel#channel-object), [subset specification](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object-resolved-data-structure).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// [Discord docs](https://discord.com/developers/docs/resources/channel#channel-object),
+/// [subset specification](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object-resolved-data-structure).
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct PartialChannel {
     /// The channel Id.
@@ -17,16 +18,24 @@ pub struct PartialChannel {
     pub kind: ChannelType,
     /// The channel permissions.
     pub permissions: Option<Permissions>,
+    /// The thread metadata.
+    ///
+    /// **Note**: This is only available on thread channels.
+    pub thread_metadata: Option<ThreadMetadata>,
+    /// The Id of the parent category for a channel, or of the parent text channel for a thread.
+    ///
+    /// **Note**: This is only available on thread channels.
+    pub parent_id: Option<ChannelId>,
 }
 
 /// A container for the IDs returned by following a news channel.
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/channel#followed-channel-object).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct FollowedChannel {
     /// The source news channel
-    channel_id: ChannelId,
+    pub channel_id: ChannelId,
     /// The created webhook ID in the target channel
-    webhook_id: WebhookId,
+    pub webhook_id: WebhookId,
 }

@@ -1,26 +1,20 @@
-/// The guild's premium tier, depends on the amount of users boosting the guild currently
-///
-/// [Discord docs](https://discord.com/developers/docs/resources/guild#guild-object-premium-tier).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[non_exhaustive]
-pub enum PremiumTier {
-    /// No tier, considered None
-    Tier0,
-    Tier1,
-    Tier2,
-    Tier3,
-    Unknown = !0,
-}
-
-enum_number!(PremiumTier {
-    Tier0,
-    Tier1,
-    Tier2,
-    Tier3
-});
-
-impl Default for PremiumTier {
-    fn default() -> Self {
-        PremiumTier::Tier0
+enum_number! {
+    /// The guild's premium tier, depends on the amount of users boosting the guild currently
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/resources/guild#guild-object-premium-tier).
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum PremiumTier {
+        /// Guild has not unlocked any Server Boost perks
+        #[default]
+        Tier0 = 0,
+        /// Guild has unlocked Server Boost level 1 perks
+        Tier1 = 1,
+        /// Guild has unlocked Server Boost level 2 perks
+        Tier2 = 2,
+        /// Guild has unlocked Server Boost level 3 perks
+        Tier3 = 3,
+        _ => Unknown(u8),
     }
 }

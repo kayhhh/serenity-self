@@ -1,6 +1,11 @@
-use std::collections::HashMap;
-
+#[cfg(feature = "http")]
+use super::Builder;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
+#[cfg(any(feature = "http", doc))]
+use crate::model::prelude::*;
 
 /// A builder to create or edit a [`Sticker`] for use via a number of model methods.
 ///
@@ -11,36 +16,81 @@ use crate::internal::prelude::*;
 /// - [`GuildId::edit_sticker`]
 /// - [`Sticker::edit`]
 ///
-/// [`Sticker`]: crate::model::sticker::Sticker
-/// [`PartialGuild::edit_sticker`]: crate::model::guild::PartialGuild::edit_sticker
-/// [`Guild::edit_sticker`]: crate::model::guild::Guild::edit_sticker
-/// [`GuildId::edit_sticker`]: crate::model::id::GuildId::edit_sticker
-/// [`Sticker::edit`]: crate::model::sticker::Sticker::edit
-#[derive(Clone, Debug, Default)]
-pub struct EditSticker(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/sticker#modify-guild-sticker)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditSticker<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<String>,
 
-impl EditSticker {
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> EditSticker<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// The name of the sticker to set.
     ///
     /// **Note**: Must be between 2 and 30 characters long.
-    pub fn name<S: ToString>(&mut self, name: S) -> &mut Self {
-        self.0.insert("name", Value::from(name.to_string()));
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
     /// The description of the sticker.
     ///
     /// **Note**: If not empty, must be between 2 and 100 characters long.
-    pub fn description<S: ToString>(&mut self, description: S) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
     /// The Discord name of a unicode emoji representing the sticker's expression.
     ///
     /// **Note**: Must be between 2 and 200 characters long.
-    pub fn tags<S: ToString>(&mut self, tags: S) -> &mut Self {
-        self.0.insert("tags", Value::from(tags.to_string()));
+    pub fn tags(mut self, tags: impl Into<String>) -> Self {
+        self.tags = Some(tags.into());
         self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for EditSticker<'a> {
+    type Context<'ctx> = (GuildId, StickerId);
+    type Built = Sticker;
+
+    /// Edits the sticker.
+    ///
+    /// **Note**: If the sticker was created by the current user, requires either the [Create Guild
+    /// Expressions] or the [Manage Guild Expressions] permission. Otherwise, the [Manage Guild
+    /// Expressions] permission is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Http`] if the current user lacks permission, or if invalid data is given.
+    ///
+    /// [Create Guild Expressions]: Permissions::CREATE_GUILD_EXPRESSIONS
+    /// [Manage Guild Expressions]: Permissions::MANAGE_GUILD_EXPRESSIONS
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().edit_sticker(ctx.0, ctx.1, &self, self.audit_log_reason).await
     }
 }

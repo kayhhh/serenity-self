@@ -1,48 +1,38 @@
-//! A set of utilities to help with common use cases that are not required to
-//! fully use the library.
+//! A set of utilities to help with common use cases that are not required to fully use the
+//! library.
 
 #[cfg(feature = "client")]
 mod argument_convert;
-pub(crate) mod backports;
-mod colour;
 #[cfg(feature = "cache")]
 mod content_safe;
 mod custom_message;
+mod formatted_timestamp;
 mod message_builder;
+#[cfg(feature = "collector")]
+mod quick_modal;
 
 pub mod token;
+
+use std::num::NonZeroU16;
 
 #[cfg(feature = "client")]
 pub use argument_convert::*;
 #[cfg(feature = "cache")]
 pub use content_safe::*;
+pub use formatted_timestamp::*;
+#[cfg(feature = "collector")]
+pub use quick_modal::*;
 use url::Url;
 
-pub use self::colour::{colours, Colour};
 pub use self::custom_message::CustomMessage;
 pub use self::message_builder::{Content, ContentModifier, EmbedMessageBuilding, MessageBuilder};
 #[doc(inline)]
-pub use self::token::{parse as parse_token, validate as validate_token};
-pub type Color = Colour;
-
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
-
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use base64::Engine as _;
-
-use crate::internal::prelude::*;
-use crate::model::id::EmojiId;
-use crate::model::misc::EmojiIdentifier;
-
-#[cfg(feature = "model")]
-pub(crate) fn encode_image(raw: &[u8]) -> String {
-    let mut encoded = BASE64_STANDARD.encode(raw);
-    encoded.insert_str(0, "data:image/png;base64,");
-    encoded
-}
+pub use self::token::validate as validate_token;
+#[cfg(all(feature = "cache", feature = "model"))]
+use crate::cache::Cache;
+#[cfg(all(feature = "cache", feature = "model"))]
+use crate::http::CacheHttp;
+use crate::model::prelude::*;
 
 /// Retrieves the "code" part of an invite out of a URL.
 ///
@@ -86,24 +76,31 @@ pub fn parse_invite(code: &str) -> &str {
 }
 
 /// Retrieves the username and discriminator out of a user tag (`name#discrim`).
+/// In order to accomodate next gen Discord usernames, this will also accept `name` style tags.
 ///
 /// If the user tag is invalid, None is returned.
 ///
 /// # Examples
 /// ```rust
+/// use std::num::NonZeroU16;
+///
 /// use serenity::utils::parse_user_tag;
 ///
-/// assert_eq!(parse_user_tag("kangalioo#9108"), Some(("kangalioo", 9108)));
+/// assert_eq!(parse_user_tag("kangalioo#9108"), Some(("kangalioo", NonZeroU16::new(9108))));
 /// assert_eq!(parse_user_tag("kangalioo#10108"), None);
+/// assert_eq!(parse_user_tag("kangalioo"), Some(("kangalioo", None)));
 /// ```
 #[must_use]
-pub fn parse_user_tag(s: &str) -> Option<(&str, u16)> {
-    let (name, discrim) = s.split_once('#')?;
-    let discrim = discrim.parse().ok()?;
-    if discrim > 9999 {
-        return None;
+pub fn parse_user_tag(s: &str) -> Option<(&str, Option<NonZeroU16>)> {
+    if let Some((name, discrim)) = s.split_once('#') {
+        let discrim: u16 = discrim.parse().ok()?;
+        if discrim > 9999 {
+            return None;
+        }
+        Some((name, NonZeroU16::new(discrim)))
+    } else {
+        Some((s, None))
     }
-    Some((name, discrim))
 }
 
 /// Retrieves an Id from a user mention.
@@ -115,13 +112,14 @@ pub fn parse_user_tag(s: &str) -> Option<(&str, u16)> {
 /// Retrieving an Id from a valid [`User`] mention:
 ///
 /// ```rust
+/// use serenity::model::id::UserId;
 /// use serenity::utils::parse_username;
 ///
 /// // regular username mention
-/// assert_eq!(parse_username("<@114941315417899012>"), Some(114941315417899012));
+/// assert_eq!(parse_username("<@114941315417899012>"), Some(UserId::new(114941315417899012)));
 ///
 /// // nickname mention
-/// assert_eq!(parse_username("<@!114941315417899012>"), Some(114941315417899012));
+/// assert_eq!(parse_username("<@!114941315417899012>"), Some(UserId::new(114941315417899012)));
 /// ```
 ///
 /// Asserting that an invalid username or nickname mention returns [`None`]:
@@ -134,22 +132,25 @@ pub fn parse_user_tag(s: &str) -> Option<(&str, u16)> {
 /// ```
 ///
 /// [`User`]: crate::model::user::User
-pub fn parse_username(mention: impl AsRef<str>) -> Option<u64> {
-    let mention = mention.as_ref();
-
+#[must_use]
+pub fn parse_user_mention(mention: &str) -> Option<UserId> {
     if mention.len() < 4 {
         return None;
     }
 
+    let len = mention.len() - 1;
     if mention.starts_with("<@!") {
-        let len = mention.len() - 1;
-        mention[3..len].parse::<u64>().ok()
+        mention[3..len].parse().ok()
     } else if mention.starts_with("<@") {
-        let len = mention.len() - 1;
-        mention[2..len].parse::<u64>().ok()
+        mention[2..len].parse().ok()
     } else {
         None
     }
+}
+
+#[deprecated = "use `utils::parse_user_mention` instead"]
+pub fn parse_username(mention: impl AsRef<str>) -> Option<UserId> {
+    parse_user_mention(mention.as_ref())
 }
 
 /// Retrieves an Id from a role mention.
@@ -161,9 +162,10 @@ pub fn parse_username(mention: impl AsRef<str>) -> Option<u64> {
 /// Retrieving an Id from a valid [`Role`] mention:
 ///
 /// ```rust
+/// use serenity::model::id::RoleId;
 /// use serenity::utils::parse_role;
 ///
-/// assert_eq!(parse_role("<@&136107769680887808>"), Some(136107769680887808));
+/// assert_eq!(parse_role("<@&136107769680887808>"), Some(RoleId::new(136107769680887808)));
 /// ```
 ///
 /// Asserting that an invalid role mention returns [`None`]:
@@ -175,19 +177,23 @@ pub fn parse_username(mention: impl AsRef<str>) -> Option<u64> {
 /// ```
 ///
 /// [`Role`]: crate::model::guild::Role
-pub fn parse_role(mention: impl AsRef<str>) -> Option<u64> {
-    let mention = mention.as_ref();
-
+#[must_use]
+pub fn parse_role_mention(mention: &str) -> Option<RoleId> {
     if mention.len() < 4 {
         return None;
     }
 
     if mention.starts_with("<@&") && mention.ends_with('>') {
         let len = mention.len() - 1;
-        mention[3..len].parse::<u64>().ok()
+        mention[3..len].parse().ok()
     } else {
         None
     }
+}
+
+#[deprecated = "use `utils::parse_role_mention` instead"]
+pub fn parse_role(mention: impl AsRef<str>) -> Option<RoleId> {
+    parse_role_mention(mention.as_ref())
 }
 
 /// Retrieves an Id from a channel mention.
@@ -199,9 +205,10 @@ pub fn parse_role(mention: impl AsRef<str>) -> Option<u64> {
 /// Retrieving an Id from a valid [`Channel`] mention:
 ///
 /// ```rust
+/// use serenity::model::id::ChannelId;
 /// use serenity::utils::parse_channel;
 ///
-/// assert_eq!(parse_channel("<#81384788765712384>"), Some(81384788765712384));
+/// assert_eq!(parse_channel("<#81384788765712384>"), Some(ChannelId::new(81384788765712384)));
 /// ```
 ///
 /// Asserting that an invalid channel mention returns [`None`]:
@@ -214,19 +221,23 @@ pub fn parse_role(mention: impl AsRef<str>) -> Option<u64> {
 /// ```
 ///
 /// [`Channel`]: crate::model::channel::Channel
-pub fn parse_channel(mention: impl AsRef<str>) -> Option<u64> {
-    let mention = mention.as_ref();
-
+#[must_use]
+pub fn parse_channel_mention(mention: &str) -> Option<ChannelId> {
     if mention.len() < 4 {
         return None;
     }
 
     if mention.starts_with("<#") && mention.ends_with('>') {
         let len = mention.len() - 1;
-        mention[2..len].parse::<u64>().ok()
+        mention[2..len].parse().ok()
     } else {
         None
     }
+}
+
+#[deprecated = "use `utils::parse_channel_mention` instead"]
+pub fn parse_channel(mention: impl AsRef<str>) -> Option<ChannelId> {
+    parse_channel_mention(mention.as_ref())
 }
 
 /// Retrieves the animated state, name and Id from an emoji mention, in the form of an
@@ -243,13 +254,10 @@ pub fn parse_channel(mention: impl AsRef<str>) -> Option<u64> {
 /// use serenity::model::misc::EmojiIdentifier;
 /// use serenity::utils::parse_emoji;
 ///
-/// let expected = EmojiIdentifier {
-///     animated: false,
-///     id: EmojiId(302516740095606785),
-///     name: "smugAnimeFace".to_string(),
-/// };
-///
-/// assert_eq!(parse_emoji("<:smugAnimeFace:302516740095606785>").unwrap(), expected);
+/// let emoji = parse_emoji("<:smugAnimeFace:302516740095606785>").unwrap();
+/// assert_eq!(emoji.animated, false);
+/// assert_eq!(emoji.id, EmojiId::new(302516740095606785));
+/// assert_eq!(emoji.name, "smugAnimeFace".to_string());
 /// ```
 ///
 /// Asserting that an invalid emoji usage returns [`None`]:
@@ -293,59 +301,18 @@ pub fn parse_emoji(mention: impl AsRef<str>) -> Option<EmojiIdentifier> {
             name.push(x);
         }
 
-        match id.parse::<u64>() {
-            Ok(x) => Some(EmojiIdentifier {
-                animated,
-                name,
-                id: EmojiId(x),
-            }),
-            _ => None,
-        }
+        id.parse().ok().map(|id| EmojiIdentifier {
+            animated,
+            id,
+            name,
+        })
     } else {
         None
     }
 }
 
-/// Reads an image from a path and encodes it into base64.
-///
-/// This can be used for methods like [`EditProfile::avatar`].
-///
-/// # Examples
-///
-/// Reads an image located at `./cat.png` into a base64-encoded string:
-///
-/// ```rust,no_run
-/// use serenity::utils;
-///
-/// let image = utils::read_image("./cat.png").expect("Failed to read image");
-/// ```
-///
-/// # Errors
-///
-/// Returns an [`Error::Io`] if the path does not exist.
-///
-/// [`EditProfile::avatar`]: crate::builder::EditProfile::avatar
-/// [`Error::Io`]: crate::error::Error::Io
-#[inline]
-pub fn read_image<P: AsRef<Path>>(path: P) -> Result<String> {
-    _read_image(path.as_ref())
-}
-
-fn _read_image(path: &Path) -> Result<String> {
-    let mut v = Vec::default();
-    let mut f = File::open(path)?;
-
-    // errors here are intentionally ignored
-    drop(f.read_to_end(&mut v));
-
-    let b64 = BASE64_STANDARD.encode(&v);
-    let ext = if path.extension() == Some(OsStr::new("png")) { "png" } else { "jpg" };
-
-    Ok(format!("data:image/{};base64,{}", ext, b64))
-}
-
-/// Turns a string into a vector of string arguments, splitting by spaces, but
-/// parsing content within quotes as one individual argument.
+/// Turns a string into a vector of string arguments, splitting by spaces, but parsing content
+/// within quotes as one individual argument.
 ///
 /// # Examples
 ///
@@ -426,7 +393,7 @@ const DOMAINS: &[&str] = &[
     "ptb.discordapp.com",
 ];
 
-/// Parses the id and token from a webhook url. Expects a [`url::Url`] object rather than a [`&str`].
+/// Parses the id and token from a webhook url. Expects a [`url::Url`] rather than a [`&str`].
 ///
 /// # Examples
 ///
@@ -441,7 +408,7 @@ const DOMAINS: &[&str] = &[
 /// assert_eq!(token, "ig5AO-wdVWpCBtUUMxmgsWryqgsW3DChbKYOINftJ4DCrUbnkedoYZD0VOH1QLr-S3sV");
 /// ```
 #[must_use]
-pub fn parse_webhook(url: &Url) -> Option<(u64, &str)> {
+pub fn parse_webhook(url: &Url) -> Option<(WebhookId, &str)> {
     let (webhook_id, token) = url.path().strip_prefix("/api/webhooks/")?.split_once('/')?;
     if !["http", "https"].contains(&url.scheme())
         || !DOMAINS.contains(&url.domain()?)
@@ -453,22 +420,81 @@ pub fn parse_webhook(url: &Url) -> Option<(u64, &str)> {
     Some((webhook_id.parse().ok()?, token))
 }
 
-/// Calculates the Id of the shard responsible for a guild, given its Id and
-/// total number of shards used.
+#[cfg(all(feature = "cache", feature = "model"))]
+pub(crate) fn user_has_guild_perms(
+    cache_http: impl CacheHttp,
+    guild_id: GuildId,
+    permissions: Permissions,
+) -> Result<()> {
+    if let Some(cache) = cache_http.cache() {
+        if let Some(guild) = cache.guild(guild_id) {
+            guild.require_perms(cache, permissions)?;
+        }
+    }
+    Ok(())
+}
+
+/// Tries to find a user's permissions using the cache. Unlike [`user_has_perms`], this function
+/// will return `true` even when the permissions are not in the cache.
+#[cfg(all(feature = "cache", feature = "model"))]
+#[inline]
+pub(crate) fn user_has_perms_cache(
+    cache: impl AsRef<Cache>,
+    channel_id: ChannelId,
+    required_permissions: Permissions,
+) -> Result<()> {
+    match user_perms(cache, channel_id) {
+        Ok(perms) => {
+            if perms.contains(required_permissions) {
+                Ok(())
+            } else {
+                Err(Error::Model(ModelError::InvalidPermissions {
+                    required: required_permissions,
+                    present: perms,
+                }))
+            }
+        },
+        Err(Error::Model(err)) if err.is_cache_err() => Ok(()),
+        Err(other) => Err(other),
+    }
+}
+
+#[cfg(all(feature = "cache", feature = "model"))]
+pub(crate) fn user_perms(cache: impl AsRef<Cache>, channel_id: ChannelId) -> Result<Permissions> {
+    let cache = cache.as_ref();
+
+    let Some(channel) = cache.channel(channel_id) else {
+        return Err(Error::Model(ModelError::ChannelNotFound));
+    };
+
+    let Some(guild) = cache.guild(channel.guild_id) else {
+        return Err(Error::Model(ModelError::GuildNotFound));
+    };
+
+    let Some(member) = guild.members.get(&cache.current_user().id) else {
+        return Err(Error::Model(ModelError::MemberNotFound));
+    };
+
+    Ok(guild.user_permissions_in(&channel, member))
+}
+
+/// Calculates the Id of the shard responsible for a guild, given its Id and total number of shards
+/// used.
 ///
 /// # Examples
 ///
-/// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using
-/// 17 shards:
+/// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using 17 shards:
 ///
 /// ```rust
+/// use serenity::model::id::GuildId;
 /// use serenity::utils;
 ///
-/// assert_eq!(utils::shard_id(81384788765712384 as u64, 17), 7);
+/// assert_eq!(utils::shard_id(GuildId::new(81384788765712384), 17), 7);
 /// ```
 #[inline]
-pub fn shard_id(guild_id: impl Into<u64>, shard_count: u64) -> u64 {
-    (guild_id.into() >> 22) % shard_count
+#[must_use]
+pub fn shard_id(guild_id: GuildId, shard_count: u32) -> u32 {
+    ((guild_id.get() >> 22) % (shard_count as u64)) as u32
 }
 
 #[cfg(test)]
@@ -488,18 +514,18 @@ mod test {
 
     #[test]
     fn test_username_parser() {
-        assert_eq!(parse_username("<@12345>").unwrap(), 12_345);
-        assert_eq!(parse_username("<@!12345>").unwrap(), 12_345);
+        assert_eq!(parse_user_mention("<@12345>").unwrap(), 12_345);
+        assert_eq!(parse_user_mention("<@!12345>").unwrap(), 12_345);
     }
 
     #[test]
     fn role_parser() {
-        assert_eq!(parse_role("<@&12345>").unwrap(), 12_345);
+        assert_eq!(parse_role_mention("<@&12345>").unwrap(), 12_345);
     }
 
     #[test]
     fn test_channel_parser() {
-        assert_eq!(parse_channel("<#12345>").unwrap(), 12_345);
+        assert_eq!(parse_channel_mention("<#12345>").unwrap(), 12_345);
     }
 
     #[test]
@@ -518,7 +544,7 @@ mod test {
     #[test]
     fn test_webhook_parser() {
         for domain in DOMAINS {
-            let url = format!("https://{}/api/webhooks/245037420704169985/ig5AO-wdVWpCBtUUMxmgsWryqgsW3DChbKYOINftJ4DCrUbnkedoYZD0VOH1QLr-S3sV", domain).parse().unwrap();
+            let url = format!("https://{domain}/api/webhooks/245037420704169985/ig5AO-wdVWpCBtUUMxmgsWryqgsW3DChbKYOINftJ4DCrUbnkedoYZD0VOH1QLr-S3sV").parse().unwrap();
             let (id, token) = parse_webhook(&url).unwrap();
             assert_eq!(id, 245037420704169985);
             assert_eq!(

@@ -1,44 +1,97 @@
-use std::collections::HashMap;
+#[cfg(feature = "http")]
+use super::Builder;
+use super::CreateForumTag;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
-use crate::json::{from_number, json, Value, NULL};
-use crate::model::channel::{PermissionOverwrite, PermissionOverwriteType, VideoQualityMode};
-use crate::model::id::ChannelId;
-
-/// A builder to edit a [`GuildChannel`] for use via [`GuildChannel::edit`]
+/// A builder to edit a [`GuildChannel`] for use via [`GuildChannel::edit`].
 ///
-/// Defaults are not directly provided by the builder itself.
+/// [Discord docs](https://discord.com/developers/docs/resources/channel#modify-channel-json-params-guild-channel).
 ///
 /// # Examples
 ///
 /// Edit a channel, providing a new name and topic:
 ///
 /// ```rust,no_run
-/// # use serenity::{http::Http, model::id::ChannelId};
+/// # use serenity::builder::EditChannel;
+/// # use serenity::http::Http;
+/// # use serenity::model::channel::GuildChannel;
 /// #
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-/// #     let http = Http::new("token");
-/// #     let mut channel = ChannelId(0);
-/// // assuming a channel has already been bound
-/// if let Err(why) = channel.edit(&http, |c| c.name("new name").topic("a test topic")).await {
+/// # let http: Http = unimplemented!();
+/// # let mut channel: GuildChannel = unimplemented!();
+/// let builder = EditChannel::new().name("new name").topic("a test topic");
+/// if let Err(why) = channel.edit(&http, builder).await {
 ///     // properly handle the error
 /// }
-/// #     Ok(())
+/// # Ok(())
 /// # }
 /// ```
-///
-/// [`GuildChannel`]: crate::model::channel::GuildChannel
-/// [`GuildChannel::edit`]: crate::model::channel::GuildChannel::edit
-#[derive(Clone, Debug, Default)]
-pub struct EditChannel(pub HashMap<&'static str, Value>);
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditChannel<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
+    kind: Option<ChannelType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nsfw: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rate_limit_per_user: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bitrate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    permission_overwrites: Option<Vec<PermissionOverwriteData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_id: Option<Option<ChannelId>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rtc_region: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    video_quality_mode: Option<VideoQualityMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_auto_archive_duration: Option<AutoArchiveDuration>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<ChannelFlags>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    available_tags: Option<Vec<CreateForumTag>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_reaction_emoji: Option<Option<ForumEmoji>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_thread_rate_limit_per_user: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_sort_order: Option<SortOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_forum_layout: Option<ForumLayoutType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
 
-impl EditChannel {
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> EditChannel<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// The bitrate of the channel in bits.
     ///
     /// This is for [voice] channels only.
     ///
-    /// [voice]: crate::model::channel::ChannelType::Voice
-    pub fn bitrate(&mut self, bitrate: u64) -> &mut Self {
-        self.0.insert("bitrate", from_number(bitrate));
+    /// [voice]: ChannelType::Voice
+    pub fn bitrate(mut self, bitrate: u32) -> Self {
+        self.bitrate = Some(bitrate);
         self
     }
 
@@ -46,37 +99,33 @@ impl EditChannel {
     ///
     /// This is for [voice] channels only.
     ///
-    /// [voice]: crate::model::channel::ChannelType::Voice
-    pub fn video_quality_mode(&mut self, quality: VideoQualityMode) -> &mut Self {
-        self.0.insert("video_quality_mode", from_number(quality as u8));
+    /// [voice]: ChannelType::Voice
+    pub fn video_quality_mode(mut self, quality: VideoQualityMode) -> Self {
+        self.video_quality_mode = Some(quality);
         self
     }
 
-    /// The voice region of the channel.
-    /// It is automatic when `None`.
+    /// The voice region of the channel. It is automatic when `None`.
     ///
     /// This is for [voice] channels only.
     ///
-    /// [voice]: crate::model::channel::ChannelType::Voice
-    pub fn voice_region(&mut self, id: Option<String>) -> &mut Self {
-        self.0.insert("rtc_region", match id {
-            Some(region) => Value::from(region),
-            None => NULL,
-        });
+    /// [voice]: ChannelType::Voice
+    pub fn voice_region(mut self, id: Option<String>) -> Self {
+        self.rtc_region = Some(id);
         self
     }
 
     /// The name of the channel.
     ///
     /// Must be between 2 and 100 characters long.
-    pub fn name<S: ToString>(&mut self, name: S) -> &mut Self {
-        self.0.insert("name", Value::from(name.to_string()));
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
     /// The position of the channel in the channel list.
-    pub fn position(&mut self, position: u64) -> &mut Self {
-        self.0.insert("position", from_number(position));
+    pub fn position(mut self, position: u16) -> Self {
+        self.position = Some(position);
         self
     }
 
@@ -86,9 +135,9 @@ impl EditChannel {
     ///
     /// This is for [text] channels only.
     ///
-    /// [text]: crate::model::channel::ChannelType::Text
-    pub fn topic<S: ToString>(&mut self, topic: S) -> &mut Self {
-        self.0.insert("topic", Value::from(topic.to_string()));
+    /// [text]: ChannelType::Text
+    pub fn topic(mut self, topic: impl Into<String>) -> Self {
+        self.topic = Some(topic.into());
         self
     }
 
@@ -96,10 +145,9 @@ impl EditChannel {
     ///
     /// This is for [text] channels only.
     ///
-    /// [text]: crate::model::channel::ChannelType::Text
-    pub fn nsfw(&mut self, nsfw: bool) -> &mut Self {
-        self.0.insert("nsfw", Value::from(nsfw));
-
+    /// [text]: ChannelType::Text
+    pub fn nsfw(mut self, nsfw: bool) -> Self {
+        self.nsfw = Some(nsfw);
         self
     }
 
@@ -107,9 +155,9 @@ impl EditChannel {
     ///
     /// This is for [voice] channels only.
     ///
-    /// [voice]: crate::model::channel::ChannelType::Voice
-    pub fn user_limit(&mut self, user_limit: u64) -> &mut Self {
-        self.0.insert("user_limit", from_number(user_limit));
+    /// [voice]: ChannelType::Voice
+    pub fn user_limit(mut self, user_limit: u32) -> Self {
+        self.user_limit = Some(user_limit);
         self
     }
 
@@ -117,51 +165,44 @@ impl EditChannel {
     ///
     /// This is for [text] and [voice] channels only.
     ///
-    /// [text]: crate::model::channel::ChannelType::Text
-    /// [voice]: crate::model::channel::ChannelType::Voice
+    /// [text]: ChannelType::Text
+    /// [voice]: ChannelType::Voice
     #[inline]
-    pub fn category<C: Into<Option<ChannelId>>>(&mut self, category: C) -> &mut Self {
-        self._category(category.into());
+    pub fn category<C: Into<Option<ChannelId>>>(mut self, category: C) -> Self {
+        self.parent_id = Some(category.into());
         self
-    }
-
-    fn _category(&mut self, category: Option<ChannelId>) {
-        self.0.insert("parent_id", match category {
-            Some(c) => Value::from(c.0),
-            None => NULL,
-        });
     }
 
     /// How many seconds must a user wait before sending another message.
     ///
-    /// Bots, or users with the [`MANAGE_MESSAGES`] and/or [`MANAGE_CHANNELS`] permissions are exempt
-    /// from this restriction.
+    /// Bots, or users with the [`MANAGE_MESSAGES`] and/or [`MANAGE_CHANNELS`] permissions are
+    /// exempt from this restriction.
     ///
     /// **Note**: Must be between 0 and 21600 seconds (360 minutes or 6 hours).
     ///
-    /// [`MANAGE_MESSAGES`]: crate::model::permissions::Permissions::MANAGE_MESSAGES
-    /// [`MANAGE_CHANNELS`]: crate::model::permissions::Permissions::MANAGE_CHANNELS
+    /// [`MANAGE_MESSAGES`]: Permissions::MANAGE_MESSAGES
+    /// [`MANAGE_CHANNELS`]: Permissions::MANAGE_CHANNELS
     #[doc(alias = "slowmode")]
-    pub fn rate_limit_per_user(&mut self, seconds: u64) -> &mut Self {
-        self.0.insert("rate_limit_per_user", from_number(seconds));
-
+    pub fn rate_limit_per_user(mut self, seconds: u16) -> Self {
+        self.rate_limit_per_user = Some(seconds);
         self
     }
 
-    /// A set of overwrites defining what a user or a user carrying a certain role can
-    /// and cannot do.
+    /// A set of overwrites defining what a user or a user carrying a certain role can or can't do.
     ///
     /// # Example
     ///
     /// Inheriting permissions from an existing channel:
     ///
     /// ```rust,no_run
-    /// # use serenity::{http::Http, model::id::ChannelId};
+    /// # use serenity::builder::EditChannel;
+    /// # use serenity::http::Http;
+    /// # use serenity::model::channel::GuildChannel;
     /// # use std::sync::Arc;
     /// #
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// #     let http = Arc::new(Http::new("token"));
-    /// #     let mut channel = ChannelId(0);
+    /// # let http: Arc<Http> = unimplemented!();
+    /// # let mut channel: GuildChannel = unimplemented!();
     /// use serenity::model::channel::{PermissionOverwrite, PermissionOverwriteType};
     /// use serenity::model::id::UserId;
     /// use serenity::model::permissions::Permissions;
@@ -170,36 +211,119 @@ impl EditChannel {
     /// let permissions = vec![PermissionOverwrite {
     ///     allow: Permissions::VIEW_CHANNEL,
     ///     deny: Permissions::SEND_TTS_MESSAGES,
-    ///     kind: PermissionOverwriteType::Member(UserId(1234)),
+    ///     kind: PermissionOverwriteType::Member(UserId::new(1234)),
     /// }];
     ///
-    /// channel.edit(http, |c| c.name("my_edited_cool_channel").permissions(permissions)).await?;
-    /// #    Ok(())
+    /// let builder = EditChannel::new().name("my_edited_cool_channel").permissions(permissions);
+    /// channel.edit(http, builder).await?;
+    /// # Ok(())
     /// # }
     /// ```
-    pub fn permissions<I>(&mut self, perms: I) -> &mut Self
-    where
-        I: IntoIterator<Item = PermissionOverwrite>,
-    {
-        let overwrites = perms
-            .into_iter()
-            .map(|perm| {
-                let (id, kind) = match perm.kind {
-                    PermissionOverwriteType::Member(id) => (id.0, "member"),
-                    PermissionOverwriteType::Role(id) => (id.0, "role"),
-                };
+    pub fn permissions(mut self, perms: impl IntoIterator<Item = PermissionOverwrite>) -> Self {
+        let overwrites = perms.into_iter().map(Into::into).collect::<Vec<_>>();
 
-                json!({
-                    "allow": perm.allow.bits(),
-                    "deny": perm.deny.bits(),
-                    "id": id,
-                    "type": kind,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        self.0.insert("permission_overwrites", Value::from(overwrites));
-
+        self.permission_overwrites = Some(overwrites);
         self
+    }
+
+    /// If this is a forum channel, sets the tags that can be assigned to forum posts.
+    pub fn available_tags(mut self, tags: impl IntoIterator<Item = CreateForumTag>) -> Self {
+        self.available_tags = Some(tags.into_iter().collect());
+        self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
+    }
+
+    /// The type of channel; only conversion between text and announcement is supported and only in
+    /// guilds with the "NEWS" feature
+    pub fn kind(mut self, kind: ChannelType) -> Self {
+        self.kind = Some(kind);
+        self
+    }
+
+    /// The default duration that the clients use (not the API) for newly created threads in the
+    /// channel, in minutes, to automatically archive the thread after recent activity
+    pub fn default_auto_archive_duration(
+        mut self,
+        default_auto_archive_duration: AutoArchiveDuration,
+    ) -> Self {
+        self.default_auto_archive_duration = Some(default_auto_archive_duration);
+        self
+    }
+
+    /// Channel flags combined as a bitfield. Currently only [`ChannelFlags::REQUIRE_TAG`] is
+    /// supported.
+    pub fn flags(mut self, flags: ChannelFlags) -> Self {
+        self.flags = Some(flags);
+        self
+    }
+
+    /// The emoji to show in the add reaction button on a thread in a forum channel
+    pub fn default_reaction_emoji(mut self, default_reaction_emoji: Option<ForumEmoji>) -> Self {
+        self.default_reaction_emoji = Some(default_reaction_emoji);
+        self
+    }
+
+    /// The initial rate_limit_per_user to set on newly created threads in a channel. This field is
+    /// copied to the thread at creation time and does not live update.
+    pub fn default_thread_rate_limit_per_user(
+        mut self,
+        default_thread_rate_limit_per_user: u16,
+    ) -> Self {
+        self.default_thread_rate_limit_per_user = Some(default_thread_rate_limit_per_user);
+        self
+    }
+
+    /// The default sort order type used to order posts in forum channels
+    pub fn default_sort_order(mut self, default_sort_order: SortOrder) -> Self {
+        self.default_sort_order = Some(default_sort_order);
+        self
+    }
+
+    /// The default forum layout type used to display posts in forum channels
+    pub fn default_forum_layout(mut self, default_forum_layout: ForumLayoutType) -> Self {
+        self.default_forum_layout = Some(default_forum_layout);
+        self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for EditChannel<'a> {
+    type Context<'ctx> = ChannelId;
+    type Built = GuildChannel;
+
+    /// Edits the channel's settings.
+    ///
+    /// **Note**: Requires the [Manage Channels] permission. Modifying permissions via
+    /// [`Self::permissions`] also requires the [Manage Roles] permission.
+    ///
+    /// # Errors
+    ///
+    /// If the `cache` is enabled, returns a [`ModelError::InvalidPermissions`] if the current user
+    /// lacks permission. Otherwise returns [`Error::Http`], as well as if invalid data is given.
+    ///
+    /// [Manage Channels]: Permissions::MANAGE_CHANNELS
+    /// [Manage Roles]: Permissions::MANAGE_ROLES
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        #[cfg(feature = "cache")]
+        {
+            if let Some(cache) = cache_http.cache() {
+                crate::utils::user_has_perms_cache(cache, ctx, Permissions::MANAGE_CHANNELS)?;
+                if self.permission_overwrites.is_some() {
+                    crate::utils::user_has_perms_cache(cache, ctx, Permissions::MANAGE_ROLES)?;
+                }
+            }
+        }
+
+        cache_http.http().edit_channel(ctx, &self, self.audit_log_reason).await
     }
 }

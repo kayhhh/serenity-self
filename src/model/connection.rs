@@ -29,23 +29,24 @@ pub struct Connection {
     pub friend_sync: bool,
     /// Whether activities related to this connection will be shown in presence updates.
     pub show_activity: bool,
+    /// Whether this connection has a corresponding third party OAuth2 token.
+    pub two_way_link: bool,
     /// The visibility of this connection.
     pub visibility: ConnectionVisibility,
 }
 
-/// The visibility of a user connection on a user's profile.
-///
-/// [Discord docs](https://discord.com/developers/docs/resources/user#connection-object-visibility-types).
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum ConnectionVisibility {
-    None = 0,
-    Everyone = 1,
-    Unknown = !0,
+enum_number! {
+    /// The visibility of a user connection on a user's profile.
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/resources/user#connection-object-visibility-types).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum ConnectionVisibility {
+        /// Invisible to everyone except the user themselves
+        None = 0,
+        /// Visible to everyone
+        Everyone = 1,
+        _ => Unknown(u8),
+    }
 }
-
-enum_number!(ConnectionVisibility {
-    None,
-    Everyone
-});

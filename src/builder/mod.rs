@@ -1,20 +1,52 @@
-//! A set of builders used to make using methods on certain structs simpler to
-//! use.
+//! A set of builders used to make using methods on certain structs simpler to use.
 //!
-//! These are used when not all parameters are required, all parameters are
-//! optional, and/or sane default values for required parameters can be applied
-//! by a builder.
+//! These are used when not all parameters are required, all parameters are optional, and/or sane
+//! default values for required parameters can be applied by a builder.
 
-mod create_channel;
-mod create_embed;
+// Option<Option<T>> is required for fields that are
+// #[serde(skip_serializing_if = "Option::is_none")]
+#![allow(clippy::option_option)]
 
-mod create_application_command;
-mod create_application_command_permission;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+
+/// Common trait for all HTTP request builders in this module.
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+pub trait Builder {
+    /// Additional data that's only required when sending a request off to the API.
+    type Context<'ctx>;
+    type Built;
+    /// Serializes a builder's fields and sends the request off the API, returning the response.
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built>;
+}
+
+#[cfg(feature = "http")]
+pub(crate) fn check_overflow(len: usize, max: usize) -> StdResult<(), usize> {
+    if len > max {
+        Err(len - max)
+    } else {
+        Ok(())
+    }
+}
 
 mod add_member;
 mod bot_auth_parameters;
 mod create_allowed_mentions;
+mod create_attachment;
+mod create_channel;
+mod create_command;
+mod create_command_permission;
 mod create_components;
+mod create_embed;
+mod create_forum_post;
+mod create_forum_tag;
 mod create_interaction_response;
 mod create_interaction_response_followup;
 mod create_invite;
@@ -23,6 +55,7 @@ mod create_scheduled_event;
 mod create_stage_instance;
 mod create_sticker;
 mod create_thread;
+mod create_webhook;
 mod edit_automod_rule;
 mod edit_channel;
 mod edit_guild;
@@ -38,64 +71,80 @@ mod edit_stage_instance;
 mod edit_sticker;
 mod edit_thread;
 mod edit_voice_state;
+mod edit_webhook;
 mod edit_webhook_message;
 mod execute_webhook;
 mod get_messages;
 
-pub use self::add_member::AddMember;
-pub use self::bot_auth_parameters::CreateBotAuthParameters;
-pub use self::create_allowed_mentions::{CreateAllowedMentions, ParseValue};
-pub use self::create_application_command::{
-    CreateApplicationCommand,
-    CreateApplicationCommandOption,
-    CreateApplicationCommands,
-};
-// Remove deprecated types and this allow() attribute in next breaking release
-#[allow(deprecated)]
-pub use self::create_application_command_permission::{
-    CreateApplicationCommandPermissionData,
-    CreateApplicationCommandPermissions,
-    CreateApplicationCommandPermissionsData,
-    CreateApplicationCommandsPermissions,
-};
-pub use self::create_channel::CreateChannel;
-pub use self::create_components::{
-    CreateActionRow,
-    CreateButton,
-    CreateComponents,
-    CreateInputText,
-    CreateSelectMenu,
-    CreateSelectMenuOption,
-    CreateSelectMenuOptions,
-};
-pub use self::create_embed::{CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter};
-pub use self::create_interaction_response::{
-    CreateAutocompleteResponse,
-    CreateInteractionResponse,
-    CreateInteractionResponseData,
-};
-pub use self::create_interaction_response_followup::CreateInteractionResponseFollowup;
-pub use self::create_invite::CreateInvite;
-pub use self::create_message::CreateMessage;
-pub use self::create_scheduled_event::CreateScheduledEvent;
-pub use self::create_stage_instance::CreateStageInstance;
-pub use self::create_sticker::CreateSticker;
-pub use self::create_thread::CreateThread;
-pub use self::edit_automod_rule::EditAutoModRule;
-pub use self::edit_channel::EditChannel;
-pub use self::edit_guild::EditGuild;
-pub use self::edit_guild_welcome_screen::EditGuildWelcomeScreen;
-pub use self::edit_guild_widget::EditGuildWidget;
-pub use self::edit_interaction_response::EditInteractionResponse;
-pub use self::edit_member::EditMember;
-pub use self::edit_message::EditMessage;
-pub use self::edit_profile::EditProfile;
-pub use self::edit_role::EditRole;
-pub use self::edit_scheduled_event::EditScheduledEvent;
-pub use self::edit_stage_instance::EditStageInstance;
-pub use self::edit_sticker::EditSticker;
-pub use self::edit_thread::EditThread;
-pub use self::edit_voice_state::EditVoiceState;
-pub use self::edit_webhook_message::EditWebhookMessage;
-pub use self::execute_webhook::ExecuteWebhook;
-pub use self::get_messages::GetMessages;
+pub use add_member::*;
+pub use bot_auth_parameters::*;
+pub use create_allowed_mentions::*;
+pub use create_attachment::*;
+pub use create_channel::*;
+pub use create_command::*;
+pub use create_command_permission::*;
+pub use create_components::*;
+pub use create_embed::*;
+pub use create_forum_post::*;
+pub use create_forum_tag::*;
+pub use create_interaction_response::*;
+pub use create_interaction_response_followup::*;
+pub use create_invite::*;
+pub use create_message::*;
+pub use create_scheduled_event::*;
+pub use create_stage_instance::*;
+pub use create_sticker::*;
+pub use create_thread::*;
+pub use create_webhook::*;
+pub use edit_automod_rule::*;
+pub use edit_channel::*;
+pub use edit_guild::*;
+pub use edit_guild_welcome_screen::*;
+pub use edit_guild_widget::*;
+pub use edit_interaction_response::*;
+pub use edit_member::*;
+pub use edit_message::*;
+pub use edit_profile::*;
+pub use edit_role::*;
+pub use edit_scheduled_event::*;
+pub use edit_stage_instance::*;
+pub use edit_sticker::*;
+pub use edit_thread::*;
+pub use edit_voice_state::*;
+pub use edit_webhook::*;
+pub use edit_webhook_message::*;
+pub use execute_webhook::*;
+pub use get_messages::*;
+
+macro_rules! button_and_select_menu_convenience_methods {
+    ($self:ident $(. $components_path:tt)+) => {
+        /// Adds a clickable button to this message.
+        ///
+        /// Convenience method that wraps [`Self::components`]. Arranges buttons in action rows
+        /// automatically.
+        pub fn button(mut $self, button: super::CreateButton) -> Self {
+            let rows = $self$(.$components_path)+.get_or_insert_with(Vec::new);
+            let row_with_space_left = rows.last_mut().and_then(|row| match row {
+                super::CreateActionRow::Buttons(buttons) if buttons.len() < 5 => Some(buttons),
+                _ => None,
+            });
+            match row_with_space_left {
+                Some(row) => row.push(button),
+                None => rows.push(super::CreateActionRow::Buttons(vec![button])),
+            }
+            $self
+        }
+
+        /// Adds an interactive select menu to this message.
+        ///
+        /// Convenience method that wraps [`Self::components`].
+        pub fn select_menu(mut $self, select_menu: super::CreateSelectMenu) -> Self {
+            $self$(.$components_path)+
+                .get_or_insert_with(Vec::new)
+                .push(super::CreateActionRow::SelectMenu(select_menu));
+            $self
+        }
+    };
+}
+
+use button_and_select_menu_convenience_methods;

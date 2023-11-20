@@ -13,8 +13,8 @@ version = "0.1.1"
 edition = "2018"
 
 [dependencies]
-bitflags = "1"
-enum_primitive = "0.1.1"
+bitflags = "2.4"
+num-traits = "0.2"
 serde_repr = "0.1.5"
 
 [dependencies.serde]
@@ -26,7 +26,7 @@ features = ["raw_value"]
 version = "1"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.5"
 serde_test = "1"
 
 [[bench]]

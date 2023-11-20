@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 /// Error that can be returned from [`Emoji::convert`].
 #[non_exhaustive]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EmojiParseError {
     /// Parser was invoked outside a guild.
     OutsideGuild,
@@ -42,20 +42,19 @@ impl ArgumentConvert for Emoji {
     type Err = EmojiParseError;
 
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         guild_id: Option<GuildId>,
         _channel_id: Option<ChannelId>,
         s: &str,
     ) -> Result<Self, Self::Err> {
         // Get Guild or PartialGuild
         let guild_id = guild_id.ok_or(EmojiParseError::OutsideGuild)?;
-        #[cfg(feature = "cache")]
-        let guild = ctx.cache.guilds.get(&guild_id);
-        #[cfg(not(feature = "cache"))]
-        let guild = ctx.http.get_guild(guild_id.0).await.ok();
-        let guild = guild.ok_or(EmojiParseError::FailedToRetrieveGuild)?;
+        let guild = guild_id
+            .to_partial_guild(&ctx)
+            .await
+            .map_err(|_| EmojiParseError::FailedToRetrieveGuild)?;
 
-        let direct_id = s.parse::<u64>().ok().map(EmojiId);
+        let direct_id = s.parse().ok();
         let id_from_mention = crate::utils::parse_emoji(s).map(|e| e.id);
 
         if let Some(emoji_id) = direct_id.or(id_from_mention) {

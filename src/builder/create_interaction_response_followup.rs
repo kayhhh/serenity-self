@@ -1,210 +1,197 @@
-use std::collections::HashMap;
-#[cfg(not(feature = "model"))]
-use std::marker::PhantomData;
+#[cfg(feature = "http")]
+use super::{check_overflow, Builder};
+use super::{
+    CreateActionRow,
+    CreateAllowedMentions,
+    CreateAttachment,
+    CreateEmbed,
+    EditAttachments,
+};
+#[cfg(feature = "http")]
+use crate::constants;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
+use crate::internal::prelude::*;
+use crate::model::prelude::*;
 
-use super::{CreateAllowedMentions, CreateEmbed};
-use crate::builder::CreateComponents;
-use crate::json;
-use crate::json::prelude::*;
-use crate::model::application::interaction::MessageFlags;
-#[cfg(feature = "model")]
-use crate::model::channel::AttachmentType;
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#create-followup-message)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct CreateInteractionResponseFollowup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    // [Omitting username: not supported in interaction followups]
+    // [Omitting avatar_url: not supported in interaction followups]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tts: Option<bool>,
+    embeds: Vec<CreateEmbed>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    allowed_mentions: Option<CreateAllowedMentions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    components: Option<Vec<CreateActionRow>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<MessageFlags>,
+    attachments: EditAttachments,
+}
 
-#[derive(Clone, Debug, Default)]
-pub struct CreateInteractionResponseFollowup<'a>(
-    pub HashMap<&'static str, Value>,
-    #[cfg(feature = "model")] pub Vec<AttachmentType<'a>>,
-    #[cfg(not(feature = "model"))] PhantomData<&'a ()>,
-);
+impl CreateInteractionResponseFollowup {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-impl<'a> CreateInteractionResponseFollowup<'a> {
+    #[cfg(feature = "http")]
+    fn check_length(&self) -> Result<()> {
+        if let Some(content) = &self.content {
+            check_overflow(content.chars().count(), constants::MESSAGE_CODE_LIMIT)
+                .map_err(|overflow| Error::Model(ModelError::MessageTooLong(overflow)))?;
+        }
+
+        check_overflow(self.embeds.len(), constants::EMBED_MAX_COUNT)
+            .map_err(|_| Error::Model(ModelError::EmbedAmount))?;
+        for embed in &self.embeds {
+            embed.check_length()?;
+        }
+
+        Ok(())
+    }
+
     /// Set the content of the message.
     ///
     /// **Note**: Message contents must be under 2000 unicode code points.
     #[inline]
-    pub fn content<D: ToString>(&mut self, content: D) -> &mut Self {
-        self._content(content.to_string())
-    }
-
-    fn _content(&mut self, content: String) -> &mut Self {
-        self.0.insert("content", Value::from(content));
+    pub fn content(mut self, content: impl Into<String>) -> Self {
+        self.content = Some(content.into());
         self
     }
 
-    /// Override the default username of the webhook
-    #[inline]
-    pub fn username<D: ToString>(&mut self, username: D) -> &mut Self {
-        self._username(username.to_string())
-    }
-
-    fn _username(&mut self, username: String) -> &mut Self {
-        self.0.insert("username", Value::from(username));
-        self
-    }
-
-    /// Override the default avatar of the webhook
-    #[inline]
-    pub fn avatar<D: ToString>(&mut self, avatar_url: D) -> &mut Self {
-        self._avatar(avatar_url.to_string())
-    }
-
-    fn _avatar(&mut self, avatar_url: String) -> &mut Self {
-        self.0.insert("avatar_url", Value::from(avatar_url));
-        self
-    }
     /// Set whether the message is text-to-speech.
     ///
     /// Think carefully before setting this to `true`.
     ///
     /// Defaults to `false`.
-    pub fn tts(&mut self, tts: bool) -> &mut Self {
-        self.0.insert("tts", Value::from(tts));
+    pub fn tts(mut self, tts: bool) -> Self {
+        self.tts = Some(tts);
         self
     }
 
     /// Appends a file to the message.
-    #[cfg(feature = "model")]
-    pub fn add_file<T: Into<AttachmentType<'a>>>(&mut self, file: T) -> &mut Self {
-        self.1.push(file.into());
+    pub fn add_file(mut self, file: CreateAttachment) -> Self {
+        self.attachments = self.attachments.add(file);
         self
     }
 
     /// Appends a list of files to the message.
-    #[cfg(feature = "model")]
-    pub fn add_files<T: Into<AttachmentType<'a>>, It: IntoIterator<Item = T>>(
-        &mut self,
-        files: It,
-    ) -> &mut Self {
-        self.1.extend(files.into_iter().map(Into::into));
+    pub fn add_files(mut self, files: impl IntoIterator<Item = CreateAttachment>) -> Self {
+        for file in files {
+            self.attachments = self.attachments.add(file);
+        }
         self
     }
 
     /// Sets a list of files to include in the message.
     ///
-    /// Calling this multiple times will overwrite the file list.
-    /// To append files, call [`Self::add_file`] or [`Self::add_files`] instead.
-    #[cfg(feature = "model")]
-    pub fn files<T: Into<AttachmentType<'a>>, It: IntoIterator<Item = T>>(
-        &mut self,
-        files: It,
-    ) -> &mut Self {
-        self.1 = files.into_iter().map(Into::into).collect();
-        self
-    }
-
-    /// Create an embed for the message.
-    pub fn embed<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateEmbed) -> &mut CreateEmbed,
-    {
-        let mut embed = CreateEmbed::default();
-        f(&mut embed);
-        self.add_embed(embed)
+    /// Calling this multiple times will overwrite the file list. To append files, call
+    /// [`Self::add_file`] or [`Self::add_files`] instead.
+    pub fn files(mut self, files: impl IntoIterator<Item = CreateAttachment>) -> Self {
+        self.attachments = EditAttachments::new();
+        self.add_files(files)
     }
 
     /// Adds an embed to the message.
-    pub fn add_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-
-        self.0
-            .entry("embeds")
-            .or_insert_with(|| Value::from(Vec::<Value>::new()))
-            .as_array_mut()
-            .expect("couldn't add embed")
-            .push(embed);
-
+    pub fn add_embed(mut self, embed: CreateEmbed) -> Self {
+        self.embeds.push(embed);
         self
     }
 
     /// Adds multiple embeds to the message.
-    pub fn add_embeds(&mut self, embeds: Vec<CreateEmbed>) -> &mut Self {
-        for embed in embeds {
-            self.add_embed(embed);
-        }
-
+    pub fn add_embeds(mut self, embeds: Vec<CreateEmbed>) -> Self {
+        self.embeds.extend(embeds);
         self
     }
 
-    /// Sets a single embed to include in the message
+    /// Sets a single embed to include in the message.
     ///
-    /// Calling this will overwrite the embed list.
-    /// To append embeds, call [`Self::add_embed`] instead.
-    pub fn set_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-        self.0.insert("embeds", Value::from(vec![embed]));
-
-        self
+    /// Calling this will overwrite the embed list. To append embeds, call [`Self::add_embed`]
+    /// instead.
+    pub fn embed(self, embed: CreateEmbed) -> Self {
+        self.embeds(vec![embed])
     }
 
     /// Sets a list of embeds to include in the message.
     ///
-    /// Calling this multiple times will overwrite the embed list.
-    /// To append embeds, call [`Self::add_embed`] instead.
-    pub fn set_embeds(&mut self, embeds: impl IntoIterator<Item = CreateEmbed>) -> &mut Self {
-        let embeds = embeds
-            .into_iter()
-            .map(|embed| json::hashmap_to_json_map(embed.0).into())
-            .collect::<Vec<Value>>();
-
-        self.0.insert("embeds", Value::from(embeds));
+    /// Calling this multiple times will overwrite the embed list. To append embeds, call
+    /// [`Self::add_embeds`] instead.
+    pub fn embeds(mut self, embeds: Vec<CreateEmbed>) -> Self {
+        self.embeds = embeds;
         self
     }
 
     /// Set the allowed mentions for the message.
-    pub fn allowed_mentions<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateAllowedMentions) -> &mut CreateAllowedMentions,
-    {
-        let mut allowed_mentions = CreateAllowedMentions::default();
-        f(&mut allowed_mentions);
-        let map = json::hashmap_to_json_map(allowed_mentions.0);
-        let allowed_mentions = Value::from(map);
-
-        self.0.insert("allowed_mentions", allowed_mentions);
+    pub fn allowed_mentions(mut self, allowed_mentions: CreateAllowedMentions) -> Self {
+        self.allowed_mentions = Some(allowed_mentions);
         self
     }
 
     /// Sets the flags for the response.
-    pub fn flags(&mut self, flags: MessageFlags) -> &mut Self {
-        self.0.insert("flags", from_number(flags.bits()));
+    pub fn flags(mut self, flags: MessageFlags) -> Self {
+        self.flags = Some(flags);
         self
     }
 
     /// Adds or removes the ephemeral flag
-    pub fn ephemeral(&mut self, ephemeral: bool) -> &mut Self {
-        let flags = self
-            .0
-            .get("flags")
-            .map_or(0, |f| f.as_u64().expect("Interaction response flag was not a number"));
+    pub fn ephemeral(mut self, ephemeral: bool) -> Self {
+        let mut flags = self.flags.unwrap_or_else(MessageFlags::empty);
 
-        let flags = if ephemeral {
-            flags | MessageFlags::EPHEMERAL.bits()
+        if ephemeral {
+            flags |= MessageFlags::EPHEMERAL;
         } else {
-            flags & !MessageFlags::EPHEMERAL.bits()
+            flags &= !MessageFlags::EPHEMERAL;
         };
 
-        self.0.insert("flags", from_number(flags));
-
-        self
-    }
-
-    /// Creates components for this message.
-    pub fn components<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateComponents) -> &mut CreateComponents,
-    {
-        let mut components = CreateComponents::default();
-        f(&mut components);
-
-        self.0.insert("components", Value::from(components.0));
+        self.flags = Some(flags);
         self
     }
 
     /// Sets the components of this message.
-    pub fn set_components(&mut self, components: CreateComponents) -> &mut Self {
-        self.0.insert("components", Value::from(components.0));
+    pub fn components(mut self, components: Vec<CreateActionRow>) -> Self {
+        self.components = Some(components);
         self
+    }
+    super::button_and_select_menu_convenience_methods!(self.components);
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for CreateInteractionResponseFollowup {
+    type Context<'ctx> = (Option<MessageId>, &'ctx str);
+    type Built = Message;
+
+    /// Creates or edits a followup response to the response sent. If a [`MessageId`] is provided,
+    /// then the corresponding message will be edited. Otherwise, a new message will be created.
+    ///
+    /// **Note**: Message contents must be under 2000 unicode code points, and embeds must be under
+    /// 6000 code points.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Model`] if the content is too long. May also return [`Error::Http`] if the
+    /// API returns an error, or [`Error::Json`] if there is an error in deserializing the
+    /// response.
+    async fn execute(
+        mut self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        self.check_length()?;
+
+        let files = self.attachments.take_files();
+
+        let http = cache_http.http();
+        match ctx.0 {
+            Some(id) => http.as_ref().edit_followup_message(ctx.1, id, &self, files).await,
+            None => http.as_ref().create_followup_message(ctx.1, &self, files).await,
+        }
     }
 }

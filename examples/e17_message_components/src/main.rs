@@ -3,23 +3,25 @@ use std::time::Duration;
 
 use dotenv::dotenv;
 use serenity::async_trait;
-use serenity::builder::CreateButton;
+use serenity::builder::{
+    CreateButton,
+    CreateInteractionResponse,
+    CreateInteractionResponseMessage,
+    CreateMessage,
+    CreateSelectMenu,
+    CreateSelectMenuKind,
+    CreateSelectMenuOption,
+};
 use serenity::client::{Context, EventHandler};
 use serenity::futures::StreamExt;
-use serenity::model::application::component::ButtonStyle;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 
 fn sound_button(name: &str, emoji: ReactionType) -> CreateButton {
-    let mut b = CreateButton::default();
-    b.custom_id(name);
     // To add an emoji to buttons, use .emoji(). The method accepts anything ReactionType or
-    // anything that can be converted to it. For a list of that, search Trait Implementations in the
-    // docs for From<...>.
-    b.emoji(emoji);
-    b.label(name);
-    b.style(ButtonStyle::Primary);
-    b
+    // anything that can be converted to it. For a list of that, search Trait Implementations in
+    // the docs for From<...>.
+    CreateButton::new(name).emoji(emoji)
 }
 
 struct Handler;
@@ -34,91 +36,93 @@ impl EventHandler for Handler {
         // Ask the user for its favorite animal
         let m = msg
             .channel_id
-            .send_message(&ctx, |m| {
-                m.content("Please select your favorite animal").components(|c| {
-                    c.create_action_row(|row| {
-                        // An action row can only contain one select menu!
-                        row.create_select_menu(|menu| {
-                            menu.custom_id("animal_select");
-                            menu.placeholder("No animal selected");
-                            menu.options(|f| {
-                                f.create_option(|o| o.label("🐈 meow").value("Cat"));
-                                f.create_option(|o| o.label("🐕 woof").value("Dog"));
-                                f.create_option(|o| o.label("🐎 neigh").value("Horse"));
-                                f.create_option(|o| o.label("🦙 hoooooooonk").value("Alpaca"));
-                                f.create_option(|o| o.label("🦀 crab rave").value("Ferris"))
-                            })
-                        })
+            .send_message(
+                &ctx,
+                CreateMessage::new().content("Please select your favorite animal").select_menu(
+                    CreateSelectMenu::new("animal_select", CreateSelectMenuKind::String {
+                        options: vec![
+                            CreateSelectMenuOption::new("🐈 meow", "Cat"),
+                            CreateSelectMenuOption::new("🐕 woof", "Dog"),
+                            CreateSelectMenuOption::new("🐎 neigh", "Horse"),
+                            CreateSelectMenuOption::new("🦙 hoooooooonk", "Alpaca"),
+                            CreateSelectMenuOption::new("🦀 crab rave", "Ferris"),
+                        ],
                     })
-                })
-            })
+                    .custom_id("animal_select")
+                    .placeholder("No animal selected"),
+                ),
+            )
             .await
             .unwrap();
 
         // Wait for the user to make a selection
         // This uses a collector to wait for an incoming event without needing to listen for it
         // manually in the EventHandler.
-        let interaction =
-            match m.await_component_interaction(&ctx).timeout(Duration::from_secs(60 * 3)).await {
-                Some(x) => x,
-                None => {
-                    m.reply(&ctx, "Timed out").await.unwrap();
-                    return;
-                },
-            };
+        let interaction = match m
+            .await_component_interaction(&ctx.shard)
+            .timeout(Duration::from_secs(60 * 3))
+            .await
+        {
+            Some(x) => x,
+            None => {
+                m.reply(&ctx, "Timed out").await.unwrap();
+                return;
+            },
+        };
 
         // data.values contains the selected value from each select menus. We only have one menu,
         // so we retrieve the first
-        let animal = &interaction.data.values[0];
+        let animal = match &interaction.data.kind {
+            ComponentInteractionDataKind::StringSelect {
+                values,
+            } => &values[0],
+            _ => panic!("unexpected interaction data kind"),
+        };
 
         // Acknowledge the interaction and edit the message
         interaction
-            .create_interaction_response(&ctx, |r| {
-                r.kind(InteractionResponseType::UpdateMessage).interaction_response_data(|d| {
-                    d.content(format!("You chose: **{}**\nNow choose a sound!", animal)).components(
-                        |c| {
-                            c.create_action_row(|r| {
-                                // add_XXX methods are an alternative to create_XXX methods
-                                r.add_button(sound_button("meow", "🐈".parse().unwrap()));
-                                r.add_button(sound_button("woof", "🐕".parse().unwrap()));
-                                r.add_button(sound_button("neigh", "🐎".parse().unwrap()));
-                                r.add_button(sound_button("hoooooooonk", "🦙".parse().unwrap()));
-                                r.add_button(sound_button(
-                                    "crab rave",
-                                    // Custom emojis in Discord are represented with
-                                    // `<:EMOJI_NAME:EMOJI_ID>`. You can see this by
-                                    // posting an emoji in your server and putting a backslash
-                                    // before the emoji.
-                                    //
-                                    // Because ReactionType implements FromStr, we can use .parse()
-                                    // to convert the textual emoji representation to ReactionType
-                                    "<:ferris:381919740114763787>".parse().unwrap(),
-                                ))
-                            })
-                        },
-                    )
-                })
-            })
+            .create_response(
+                &ctx,
+                CreateInteractionResponse::UpdateMessage(
+                    CreateInteractionResponseMessage::default()
+                        .content(format!("You chose: **{animal}**\nNow choose a sound!"))
+                        .button(sound_button("meow", "🐈".parse().unwrap()))
+                        .button(sound_button("woof", "🐕".parse().unwrap()))
+                        .button(sound_button("neigh", "🐎".parse().unwrap()))
+                        .button(sound_button("hoooooooonk", "🦙".parse().unwrap()))
+                        .button(sound_button(
+                            "crab rave",
+                            // Custom emojis in Discord are represented with
+                            // `<:EMOJI_NAME:EMOJI_ID>`. You can see this by posting an emoji in
+                            // your server and putting a backslash before the emoji.
+                            //
+                            // Because ReactionType implements FromStr, we can use .parse() to
+                            // convert the textual emoji representation to ReactionType
+                            "<:ferris:381919740114763787>".parse().unwrap(),
+                        )),
+                ),
+            )
             .await
             .unwrap();
 
         // Wait for multiple interactions
         let mut interaction_stream =
-            m.await_component_interactions(&ctx).timeout(Duration::from_secs(60 * 3)).build();
+            m.await_component_interaction(&ctx.shard).timeout(Duration::from_secs(60 * 3)).stream();
 
         while let Some(interaction) = interaction_stream.next().await {
             let sound = &interaction.data.custom_id;
             // Acknowledge the interaction and send a reply
             interaction
-                .create_interaction_response(&ctx, |r| {
+                .create_response(
+                    &ctx,
                     // This time we dont edit the message but reply to it
-                    r.kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|d| {
+                    CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::default()
                             // Make the message hidden for other users by setting `ephemeral(true)`.
-                            d.ephemeral(true)
-                                .content(format!("The **{}** says __{}__", animal, sound))
-                        })
-                })
+                            .ephemeral(true)
+                            .content(format!("The **{animal}** says __{sound}__")),
+                    ),
+                )
                 .await
                 .unwrap();
         }
@@ -145,9 +149,9 @@ async fn main() {
         .expect("Error creating client");
 
     // Finally, start a single shard, and start listening to events.
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
+    // Shards will automatically attempt to reconnect, and will perform exponential backoff until
+    // it reconnects.
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }

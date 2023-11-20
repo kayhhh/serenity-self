@@ -1,298 +1,410 @@
-use std::collections::HashMap;
+#[cfg(feature = "http")]
+use super::{check_overflow, Builder};
+use super::{
+    CreateActionRow,
+    CreateAllowedMentions,
+    CreateAttachment,
+    CreateEmbed,
+    EditAttachments,
+};
+#[cfg(feature = "http")]
+use crate::constants;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+use crate::internal::prelude::*;
+use crate::json::{self, json};
+use crate::model::prelude::*;
 
-use super::{CreateAllowedMentions, CreateEmbed};
-use crate::builder::CreateComponents;
-use crate::json;
-use crate::json::prelude::*;
-use crate::model::application::interaction::{InteractionResponseType, MessageFlags};
-use crate::model::channel::AttachmentType;
-
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object).
 #[derive(Clone, Debug)]
-pub struct CreateInteractionResponse<'a>(
-    pub HashMap<&'static str, Value>,
-    pub Vec<AttachmentType<'a>>,
-);
-
-impl<'a> CreateInteractionResponse<'a> {
-    /// Sets the InteractionResponseType of the message.
+pub enum CreateInteractionResponse {
+    /// Acknowledges a Ping (only required when your bot uses an HTTP endpoint URL).
     ///
-    /// Defaults to `ChannelMessageWithSource`.
-    pub fn kind(&mut self, kind: InteractionResponseType) -> &mut Self {
-        self.0.insert("type", from_number(kind as u8));
-        self
-    }
+    /// Corresponds to Discord's `PONG`.
+    Pong,
+    /// Responds to an interaction with a message.
+    ///
+    /// Corresponds to Discord's `CHANNEL_MESSAGE_WITH_SOURCE`.
+    Message(CreateInteractionResponseMessage),
+    /// Acknowledges the interaction in order to edit a response later. The user sees a loading
+    /// state.
+    ///
+    /// Corresponds to Discord's `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE`.
+    Defer(CreateInteractionResponseMessage),
+    /// Only valid for component-based interactions (seems to work for modal submit interactions
+    /// too even though it's not documented).
+    ///
+    /// Acknowledges the interaction. You can optionally edit the original message later. The user
+    /// does not see a loading state.
+    ///
+    /// Corresponds to Discord's `DEFERRED_UPDATE_MESSAGE`.
+    Acknowledge,
+    /// Only valid for component-based interactions.
+    ///
+    /// Edits the message the component was attached to.
+    ///
+    /// Corresponds to Discord's `UPDATE_MESSAGE`.
+    UpdateMessage(CreateInteractionResponseMessage),
+    /// Only valid for autocomplete interactions.
+    ///
+    /// Responds to the autocomplete interaction with suggested choices.
+    ///
+    /// Corresponds to Discord's `APPLICATION_COMMAND_AUTOCOMPLETE_RESULT`.
+    Autocomplete(CreateAutocompleteResponse),
+    /// Not valid for Modal and Ping interactions
+    ///
+    /// Responds to the interaction with a popup modal.
+    ///
+    /// Corresponds to Discord's `MODAL`.
+    Modal(CreateModal),
+}
 
-    /// Sets the `InteractionApplicationCommandCallbackData` for the message.
-    pub fn interaction_response_data<F>(&mut self, f: F) -> &mut Self
-    where
-        for<'b> F: FnOnce(
-            &'b mut CreateInteractionResponseData<'a>,
-        ) -> &'b mut CreateInteractionResponseData<'a>,
-    {
-        let mut data = CreateInteractionResponseData::default();
-        f(&mut data);
-        let map = json::hashmap_to_json_map(data.0);
+impl serde::Serialize for CreateInteractionResponse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> StdResult<S::Ok, S::Error> {
+        use serde::ser::Error as _;
 
-        self.0.insert("data", Value::from(map));
-        self.1 = data.1;
-        self
+        #[allow(clippy::match_same_arms)] // hurts readability
+        json!({
+            "type": match self {
+                Self::Pong { .. } => 1,
+                Self::Message { .. } => 4,
+                Self::Defer { .. } => 5,
+                Self::Acknowledge { .. } => 6,
+                Self::UpdateMessage { .. } => 7,
+                Self::Autocomplete { .. } => 8,
+                Self::Modal { .. } => 9,
+            },
+            "data": match self {
+                Self::Pong => json::NULL,
+                Self::Message(x) => json::to_value(x).map_err(S::Error::custom)?,
+                Self::Defer(x) => json::to_value(x).map_err(S::Error::custom)?,
+                Self::Acknowledge => json::NULL,
+                Self::UpdateMessage(x) => json::to_value(x).map_err(S::Error::custom)?,
+                Self::Autocomplete(x) => json::to_value(x).map_err(S::Error::custom)?,
+                Self::Modal(x) => json::to_value(x).map_err(S::Error::custom)?,
+            }
+        })
+        .serialize(serializer)
     }
 }
 
-impl<'a> Default for CreateInteractionResponse<'a> {
-    fn default() -> CreateInteractionResponse<'a> {
-        let mut map = HashMap::new();
-        map.insert("type", from_number(4));
+impl CreateInteractionResponse {
+    #[cfg(feature = "http")]
+    fn check_length(&self) -> Result<()> {
+        if let CreateInteractionResponse::Message(data)
+        | CreateInteractionResponse::Defer(data)
+        | CreateInteractionResponse::UpdateMessage(data) = self
+        {
+            if let Some(content) = &data.content {
+                check_overflow(content.chars().count(), constants::MESSAGE_CODE_LIMIT)
+                    .map_err(|overflow| Error::Model(ModelError::MessageTooLong(overflow)))?;
+            }
 
-        CreateInteractionResponse(map, Vec::new())
+            if let Some(embeds) = &data.embeds {
+                check_overflow(embeds.len(), constants::EMBED_MAX_COUNT)
+                    .map_err(|_| Error::Model(ModelError::EmbedAmount))?;
+
+                for embed in embeds {
+                    embed.check_length()?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct CreateInteractionResponseData<'a>(
-    pub HashMap<&'static str, Value>,
-    pub Vec<AttachmentType<'a>>,
-);
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for CreateInteractionResponse {
+    type Context<'ctx> = (InteractionId, &'ctx str);
+    type Built = ();
 
-impl<'a> CreateInteractionResponseData<'a> {
+    /// Creates a response to the interaction received.
+    ///
+    /// **Note**: Message contents must be under 2000 unicode code points, and embeds must be under
+    /// 6000 code points.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error::Model`] if the message content is too long. May also return an
+    /// [`Error::Http`] if the API returns an error, or an [`Error::Json`] if there is an error in
+    /// deserializing the API response.
+    async fn execute(
+        mut self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        self.check_length()?;
+        let files = match &mut self {
+            CreateInteractionResponse::Message(msg)
+            | CreateInteractionResponse::Defer(msg)
+            | CreateInteractionResponse::UpdateMessage(msg) => msg.attachments.take_files(),
+            _ => Vec::new(),
+        };
+
+        cache_http.http().create_interaction_response(ctx.0, ctx.1, &self, files).await
+    }
+}
+
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-messages).
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct CreateInteractionResponseMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tts: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    embeds: Option<Vec<CreateEmbed>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    allowed_mentions: Option<CreateAllowedMentions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<InteractionResponseFlags>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    components: Option<Vec<CreateActionRow>>,
+    attachments: EditAttachments,
+}
+
+impl CreateInteractionResponseMessage {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Set whether the message is text-to-speech.
     ///
     /// Think carefully before setting this to `true`.
     ///
     /// Defaults to `false`.
-    pub fn tts(&mut self, tts: bool) -> &mut Self {
-        self.0.insert("tts", Value::from(tts));
+    pub fn tts(mut self, tts: bool) -> Self {
+        self.tts = Some(tts);
         self
     }
 
     /// Appends a file to the message.
-    pub fn add_file<T: Into<AttachmentType<'a>>>(&mut self, file: T) -> &mut Self {
-        self.1.push(file.into());
+    pub fn add_file(mut self, file: CreateAttachment) -> Self {
+        self.attachments = self.attachments.add(file);
         self
     }
 
     /// Appends a list of files to the message.
-    pub fn add_files<T: Into<AttachmentType<'a>>, It: IntoIterator<Item = T>>(
-        &mut self,
-        files: It,
-    ) -> &mut Self {
-        self.1.extend(files.into_iter().map(Into::into));
+    pub fn add_files(mut self, files: impl IntoIterator<Item = CreateAttachment>) -> Self {
+        for file in files {
+            self.attachments = self.attachments.add(file);
+        }
         self
     }
 
     /// Sets a list of files to include in the message.
     ///
-    /// Calling this multiple times will overwrite the file list.
-    /// To append files, call [`Self::add_file`] or [`Self::add_files`] instead.
-    pub fn files<T: Into<AttachmentType<'a>>, It: IntoIterator<Item = T>>(
-        &mut self,
-        files: It,
-    ) -> &mut Self {
-        self.1 = files.into_iter().map(Into::into).collect();
-        self
+    /// Calling this multiple times will overwrite the file list. To append files, call
+    /// [`Self::add_file`] or [`Self::add_files`] instead.
+    pub fn files(mut self, files: impl IntoIterator<Item = CreateAttachment>) -> Self {
+        self.attachments = EditAttachments::new();
+        self.add_files(files)
     }
 
     /// Set the content of the message.
     ///
     /// **Note**: Message contents must be under 2000 unicode code points.
     #[inline]
-    pub fn content<D: ToString>(&mut self, content: D) -> &mut Self {
-        self._content(content.to_string())
-    }
-
-    fn _content(&mut self, content: String) -> &mut Self {
-        self.0.insert("content", Value::from(content));
+    pub fn content(mut self, content: impl Into<String>) -> Self {
+        self.content = Some(content.into());
         self
     }
 
-    /// Create an embed for the message.
-    pub fn embed<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateEmbed) -> &mut CreateEmbed,
-    {
-        let mut embed = CreateEmbed::default();
-        f(&mut embed);
-        self.add_embed(embed)
-    }
-
     /// Adds an embed to the message.
-    pub fn add_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-
-        let embeds = self.0.entry("embeds").or_insert_with(|| Value::from(Vec::<Value>::new()));
-
-        if let Some(embeds) = embeds.as_array_mut() {
-            embeds.push(embed);
-        }
-
+    ///
+    /// Calling this while editing a message will overwrite existing embeds.
+    pub fn add_embed(mut self, embed: CreateEmbed) -> Self {
+        self.embeds.get_or_insert_with(Vec::new).push(embed);
         self
     }
 
     /// Adds multiple embeds for the message.
-    pub fn add_embeds(&mut self, embeds: Vec<CreateEmbed>) -> &mut Self {
-        for embed in embeds {
-            self.add_embed(embed);
-        }
-
+    ///
+    /// Calling this while editing a message will overwrite existing embeds.
+    pub fn add_embeds(mut self, embeds: Vec<CreateEmbed>) -> Self {
+        self.embeds.get_or_insert_with(Vec::new).extend(embeds);
         self
     }
 
     /// Sets a single embed to include in the message
     ///
-    /// Calling this will overwrite the embed list.
-    /// To append embeds, call [`Self::add_embed`] instead.
-    pub fn set_embed(&mut self, embed: CreateEmbed) -> &mut Self {
-        let map = json::hashmap_to_json_map(embed.0);
-        let embed = Value::from(map);
-        self.0.insert("embeds", Value::from(vec![embed]));
-
-        self
+    /// Calling this will overwrite the embed list. To append embeds, call [`Self::add_embed`]
+    /// instead.
+    pub fn embed(self, embed: CreateEmbed) -> Self {
+        self.embeds(vec![embed])
     }
 
     /// Sets a list of embeds to include in the message.
     ///
-    /// Calling this multiple times will overwrite the embed list.
-    /// To append embeds, call [`Self::add_embed`] instead.
-    pub fn set_embeds(&mut self, embeds: impl IntoIterator<Item = CreateEmbed>) -> &mut Self {
-        let embeds = embeds
-            .into_iter()
-            .map(|embed| json::hashmap_to_json_map(embed.0).into())
-            .collect::<Vec<Value>>();
-
-        self.0.insert("embeds", Value::from(embeds));
+    /// Calling this will overwrite the embed list. To append embeds, call [`Self::add_embeds`]
+    /// instead.
+    pub fn embeds(mut self, embeds: Vec<CreateEmbed>) -> Self {
+        self.embeds = Some(embeds);
         self
     }
 
     /// Set the allowed mentions for the message.
-    pub fn allowed_mentions<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateAllowedMentions) -> &mut CreateAllowedMentions,
-    {
-        let mut allowed_mentions = CreateAllowedMentions::default();
-        f(&mut allowed_mentions);
-        let map = json::hashmap_to_json_map(allowed_mentions.0);
-        let allowed_mentions = Value::from(map);
-
-        self.0.insert("allowed_mentions", allowed_mentions);
+    pub fn allowed_mentions(mut self, allowed_mentions: CreateAllowedMentions) -> Self {
+        self.allowed_mentions = Some(allowed_mentions);
         self
     }
 
     /// Sets the flags for the message.
-    pub fn flags(&mut self, flags: MessageFlags) -> &mut Self {
-        self.0.insert("flags", from_number(flags.bits()));
+    pub fn flags(mut self, flags: InteractionResponseFlags) -> Self {
+        self.flags = Some(flags);
         self
     }
 
-    /// Adds or removes the ephemeral flag
-    pub fn ephemeral(&mut self, ephemeral: bool) -> &mut Self {
-        let flags = self
-            .0
-            .get("flags")
-            .map_or(0, |f| f.as_u64().expect("Interaction response flag was not a number"));
+    /// Adds or removes the ephemeral flag.
+    pub fn ephemeral(mut self, ephemeral: bool) -> Self {
+        let mut flags = self.flags.unwrap_or_else(InteractionResponseFlags::empty);
 
-        let flags = if ephemeral {
-            flags | MessageFlags::EPHEMERAL.bits()
+        if ephemeral {
+            flags |= InteractionResponseFlags::EPHEMERAL;
         } else {
-            flags & !MessageFlags::EPHEMERAL.bits()
+            flags &= !InteractionResponseFlags::EPHEMERAL;
         };
 
-        self.0.insert("flags", from_number(flags));
-
-        self
-    }
-
-    /// Creates components for this message.
-    pub fn components<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut CreateComponents) -> &mut CreateComponents,
-    {
-        let mut components = CreateComponents::default();
-        f(&mut components);
-
-        self.0.insert("components", Value::from(components.0));
+        self.flags = Some(flags);
         self
     }
 
     /// Sets the components of this message.
-    pub fn set_components(&mut self, components: CreateComponents) -> &mut Self {
-        self.0.insert("components", Value::Array(components.0));
+    pub fn components(mut self, components: Vec<CreateActionRow>) -> Self {
+        self.components = Some(components);
         self
     }
+    super::button_and_select_menu_convenience_methods!(self.components);
+}
 
-    /// Sets the custom id for modal interactions
-    pub fn custom_id<D: ToString>(&mut self, id: D) -> &mut Self {
-        self.0.insert("custom_id", Value::String(id.to_string()));
-        self
+// Same as CommandOptionChoice according to Discord, see
+// [Autocomplete docs](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-autocomplete).
+#[must_use]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct AutocompleteChoice(CommandOptionChoice);
+impl AutocompleteChoice {
+    pub fn new(name: impl Into<String>, value: impl Into<Value>) -> Self {
+        Self(CommandOptionChoice {
+            name: name.into(),
+            name_localizations: None,
+            value: value.into(),
+        })
     }
 
-    /// Sets the title for modal interactions
-    pub fn title<D: ToString>(&mut self, title: D) -> &mut Self {
-        self.0.insert("title", Value::String(title.to_string()));
+    pub fn add_localized_name(
+        mut self,
+        locale: impl Into<String>,
+        localized_name: impl Into<String>,
+    ) -> Self {
+        self.0
+            .name_localizations
+            .get_or_insert_with(Default::default)
+            .insert(locale.into(), localized_name.into());
         self
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CreateAutocompleteResponse(pub HashMap<&'static str, Value>);
-
-impl Default for CreateAutocompleteResponse {
-    fn default() -> CreateAutocompleteResponse {
-        let mut map = HashMap::new();
-        map.insert("choices", Value::Array(vec![]));
-        CreateAutocompleteResponse(map)
-    }
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-autocomplete)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct CreateAutocompleteResponse {
+    choices: Vec<AutocompleteChoice>,
 }
 
 impl CreateAutocompleteResponse {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// For autocomplete responses this sets their autocomplete suggestions.
     ///
     /// See the official docs on [`Application Command Option Choices`] for more information.
     ///
     /// [`Application Command Option Choices`]: https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-choice-structure
-    pub fn set_choices(&mut self, choices: Value) -> &mut Self {
-        self.0.insert("choices", choices);
+    pub fn set_choices(mut self, choices: Vec<AutocompleteChoice>) -> Self {
+        self.choices = choices;
         self
     }
 
     /// Add an int autocomplete choice.
     ///
-    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100 characters. Value must be between -2^53 and 2^53.
-    pub fn add_int_choice<D: ToString>(&mut self, name: D, value: i64) -> &mut Self {
-        let choice = json!({
-            "name": name.to_string(),
-            "value" : value
-        });
-        self.add_choice(choice)
+    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100
+    /// characters. Value must be between -2^53 and 2^53.
+    pub fn add_int_choice(self, name: impl Into<String>, value: i64) -> Self {
+        self.add_choice(AutocompleteChoice::new(name, value))
     }
 
     /// Adds a string autocomplete choice.
     ///
-    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100 characters. Value must be up to 100 characters.
-    pub fn add_string_choice<D: ToString, E: ToString>(&mut self, name: D, value: E) -> &mut Self {
-        let choice = json!({
-            "name": name.to_string(),
-            "value": value.to_string()
-        });
-        self.add_choice(choice)
+    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100
+    /// characters. Value must be up to 100 characters.
+    pub fn add_string_choice(self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.add_choice(AutocompleteChoice::new(name, value.into()))
     }
 
     /// Adds a number autocomplete choice.
     ///
-    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100 characters. Value must be between -2^53 and 2^53.
-    pub fn add_number_choice<D: ToString>(&mut self, name: D, value: f64) -> &mut Self {
-        let choice = json!({
-            "name": name.to_string(),
-            "value" : value
-        });
-        self.add_choice(choice)
+    /// **Note**: There can be no more than 25 choices set. Name must be between 1 and 100
+    /// characters. Value must be between -2^53 and 2^53.
+    pub fn add_number_choice(self, name: impl Into<String>, value: f64) -> Self {
+        self.add_choice(AutocompleteChoice::new(name, value))
     }
 
-    fn add_choice(&mut self, value: Value) -> &mut Self {
-        let choices = self.0.entry("choices").or_insert_with(|| Value::Array(vec![]));
-        let choices_arr = choices.as_array_mut().expect("Must be an array");
-        choices_arr.push(value);
+    fn add_choice(mut self, value: AutocompleteChoice) -> Self {
+        self.choices.push(value);
+        self
+    }
+}
 
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl Builder for CreateAutocompleteResponse {
+    type Context<'ctx> = (InteractionId, &'ctx str);
+    type Built = ();
+
+    /// Creates a response to an autocomplete interaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error::Http`] if the API returns an error.
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        cache_http.http().create_interaction_response(ctx.0, ctx.1, &self, Vec::new()).await
+    }
+}
+
+/// [Discord docs](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-modal).
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct CreateModal {
+    components: Vec<CreateActionRow>,
+    custom_id: String,
+    title: String,
+}
+
+impl CreateModal {
+    /// Creates a new modal.
+    pub fn new(custom_id: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            components: Vec::new(),
+            custom_id: custom_id.into(),
+            title: title.into(),
+        }
+    }
+
+    /// Sets the components of this message.
+    ///
+    /// Overwrites existing components.
+    pub fn components(mut self, components: Vec<CreateActionRow>) -> Self {
+        self.components = components;
         self
     }
 }

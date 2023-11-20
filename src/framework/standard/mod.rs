@@ -29,9 +29,7 @@ use self::buckets::{RateLimitInfo, RevertBucket};
 use super::Framework;
 #[cfg(feature = "cache")]
 use crate::cache::Cache;
-use crate::client::Context;
-#[cfg(feature = "cache")]
-use crate::model::channel::Channel;
+use crate::client::{Context, FullEvent};
 use crate::model::channel::Message;
 #[cfg(feature = "cache")]
 use crate::model::guild::Member;
@@ -39,8 +37,7 @@ use crate::model::permissions::Permissions;
 #[cfg(all(feature = "cache", feature = "http", feature = "model"))]
 use crate::model::{guild::Role, id::RoleId};
 
-/// An enum representing all possible fail conditions under which a command won't
-/// be executed.
+/// An enum representing all possible fail conditions under which a command won't be executed.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum DispatchError {
@@ -103,20 +100,18 @@ pub struct StandardFramework {
     unrecognised_command: Option<UnrecognisedHook>,
     normal_message: Option<NormalMessageHook>,
     prefix_only: Option<PrefixOnlyHook>,
-    config: Configuration,
+    config: parking_lot::RwLock<Configuration>,
     help: Option<&'static HelpCommand>,
     /// Whether the framework has been "initialized".
     ///
     /// The framework is initialized once one of the following occurs:
-    ///
     /// - configuration has been set;
     /// - a command handler has been set;
     /// - a command check has been set.
     ///
-    /// This is used internally to determine whether or not - in addition to
-    /// dispatching to the [`EventHandler::message`] handler - to have the
-    /// framework check if a [`Event::MessageCreate`] should be processed by
-    /// itself.
+    /// This is used internally to determine whether or not - in addition to dispatching to the
+    /// [`EventHandler::message`] handler - to have the framework check if a
+    /// [`Event::MessageCreate`] should be processed by itself.
     ///
     /// [`EventHandler::message`]: crate::client::EventHandler::message
     /// [`Event::MessageCreate`]: crate::model::event::Event::MessageCreate
@@ -130,13 +125,15 @@ impl StandardFramework {
         StandardFramework::default()
     }
 
-    /// Configures the framework, setting non-default values. All fields are
-    /// optional. Refer to [`Configuration::default`] for more information on
-    /// the default values.
+    /// Configures the framework, setting non-default values.
+    ///
+    /// This passes a mutable reference to the current configuration, allowing for runtime
+    /// configuration of the Framework.
     ///
     /// # Examples
     ///
-    /// Configuring the framework for a [`Client`], [allowing whitespace between prefixes], and setting the [`prefix`] to `"~"`:
+    /// Configuring the framework for a [`Client`], [allowing whitespace between prefixes], and
+    /// setting the [`prefix`] to `"~"`:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -146,37 +143,32 @@ impl StandardFramework {
     /// use serenity::Client;
     ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let framework = StandardFramework::new().configure(|c| c.with_whitespace(true).prefix("~"));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.with_whitespace(true).prefix("~"));
     ///
+    /// let token = std::env::var("DISCORD_TOKEN")?;
     /// let mut client = Client::builder(&token, GatewayIntents::default())
     ///     .event_handler(Handler)
     ///     .framework(framework)
     ///     .await?;
-    /// #     Ok(())
+    /// # Ok(())
     /// # }
     /// ```
     ///
     /// [`Client`]: crate::Client
     /// [`prefix`]: Configuration::prefix
     /// [allowing whitespace between prefixes]: Configuration::with_whitespace
-    #[must_use]
-    pub fn configure<F>(mut self, f: F) -> Self
-    where
-        F: FnOnce(&mut Configuration) -> &mut Configuration,
-    {
-        f(&mut self.config);
-
-        self
+    pub fn configure(&self, f: impl FnOnce(&mut Configuration) -> &mut Configuration) {
+        f(&mut self.config.write());
     }
 
-    /// Defines a bucket with `delay` between each command, and the `limit` of uses
-    /// per `time_span`.
+    /// Defines a bucket with `delay` between each command, and the `limit` of uses per
+    /// `time_span`.
     ///
     /// # Examples
     ///
-    /// Create and use a bucket that limits a command to 3 uses per 10 seconds with
-    /// a 2 second delay in between invocations:
+    /// Create and use a bucket that limits a command to 3 uses per 10 seconds with a 2 second
+    /// delay in between invocations:
     ///
     /// ```rust,no_run
     /// use serenity::framework::standard::macros::command;
@@ -210,8 +202,10 @@ impl StandardFramework {
 
     /// Whether the message should be ignored because it is from a bot or webhook.
     fn should_ignore(&self, msg: &Message) -> bool {
-        (self.config.ignore_bots && msg.author.bot)
-            || (self.config.ignore_webhooks && msg.webhook_id.is_some())
+        let config = self.config.read();
+
+        (config.ignore_bots && msg.author.bot)
+            || (config.ignore_webhooks && msg.webhook_id.is_some())
     }
 
     async fn should_fail<'a>(
@@ -240,54 +234,52 @@ impl StandardFramework {
             }
         }
 
-        if (group.owner_privilege && command.owner_privilege)
-            && self.config.owners.contains(&msg.author.id)
         {
-            return None;
-        }
+            let config = self.config.read();
+            if (group.owner_privilege && command.owner_privilege)
+                && config.owners.contains(&msg.author.id)
+            {
+                return None;
+            }
 
-        if self.config.blocked_users.contains(&msg.author.id) {
-            return Some(DispatchError::BlockedUser);
-        }
+            if config.blocked_users.contains(&msg.author.id) {
+                return Some(DispatchError::BlockedUser);
+            }
 
-        #[cfg(feature = "cache")]
-        {
-            if let Some(Channel::Guild(channel)) = msg.channel_id.to_channel_cached(ctx) {
-                let guild_id = channel.guild_id;
+            #[cfg(feature = "cache")]
+            {
+                if let Some(channel) = msg.channel_id.to_channel_cached(&ctx.cache) {
+                    let guild_id = channel.guild_id;
 
-                if self.config.blocked_guilds.contains(&guild_id) {
-                    return Some(DispatchError::BlockedGuild);
-                }
-
-                let owner_id_option = ctx.cache.guild_field(guild_id, |guild| guild.owner_id);
-
-                if let Some(owner_id) = owner_id_option {
-                    if self.config.blocked_users.contains(&owner_id) {
+                    if config.blocked_guilds.contains(&guild_id) {
                         return Some(DispatchError::BlockedGuild);
+                    }
+
+                    if let Some(guild) = ctx.cache.guild(guild_id) {
+                        if config.blocked_users.contains(&guild.owner_id) {
+                            return Some(DispatchError::BlockedGuild);
+                        }
                     }
                 }
             }
+
+            if !config.allowed_channels.is_empty()
+                && !config.allowed_channels.contains(&msg.channel_id)
+            {
+                return Some(DispatchError::BlockedChannel);
+            }
         }
 
-        if !self.config.allowed_channels.is_empty()
-            && !self.config.allowed_channels.contains(&msg.channel_id)
-        {
-            return Some(DispatchError::BlockedChannel);
-        }
-
-        // Try passing the command's bucket.
-        // exiting the loop if no command ratelimit has been hit or
-        // early-return when ratelimits cancel the framework invocation.
-        // Otherwise, delay and loop again to check if we passed the bucket.
+        // Try passing the command's bucket, exiting the loop if no command ratelimit has been hit
+        // or early-return when ratelimits cancel the framework invocation. Otherwise, delay and
+        // loop again to check if we passed the bucket.
         loop {
             let mut duration = None;
 
             {
                 let mut buckets = self.buckets.lock().await;
 
-                if let Some(ref mut bucket) =
-                    command.bucket.as_ref().and_then(|b| buckets.get_mut(*b))
-                {
+                if let Some(bucket) = command.bucket.and_then(|b| buckets.get_mut(b)) {
                     if let Some(rate_limit_info) = bucket.take(ctx, msg).await {
                         duration = match rate_limit_info.action {
                             RateLimitAction::Cancelled | RateLimitAction::FailedDelay => {
@@ -316,9 +308,8 @@ impl StandardFramework {
         None
     }
 
-    /// Adds a group which can organize several related commands.
-    /// Groups are taken into account when using
-    /// [`serenity::framework::standard::help_commands`].
+    /// Adds a group which can organize several related commands. Groups are taken into account
+    /// when using [`serenity::framework::standard::help_commands`].
     ///
     /// # Examples
     ///
@@ -372,20 +363,21 @@ impl StandardFramework {
         self
     }
 
-    /// Adds a group to be used by the framework. Primary use-case is runtime modification
-    /// of groups in the framework; will _not_ mark the framework as initialized. Refer to
+    /// Adds a group to be used by the framework. Primary use-case is runtime modification of
+    /// groups in the framework; will _not_ mark the framework as initialized. Refer to
     /// [`Self::group`] for adding groups in initial configuration.
     ///
-    /// Note: does _not_ return [`Self`] like many other commands. This is because
-    /// it's not intended to be chained as the other commands are.
+    /// Note: does _not_ return [`Self`] like many other commands. This is because it's not
+    /// intended to be chained as the other commands are.
     pub fn group_add(&mut self, group: &'static CommandGroup) {
+        let config = self.config.read();
         let map = if group.options.prefixes.is_empty() {
             Map::Prefixless(
-                GroupMap::new(group.options.sub_groups, &self.config),
-                CommandMap::new(group.options.commands, &self.config),
+                GroupMap::new(group.options.sub_groups, &config),
+                CommandMap::new(group.options.commands, &config),
             )
         } else {
-            Map::WithPrefixes(GroupMap::new(&[group], &self.config))
+            Map::WithPrefixes(GroupMap::new(&[group], &config))
         };
 
         self.groups.push((group, map));
@@ -394,8 +386,8 @@ impl StandardFramework {
     /// Removes a group from being used in the framework. Primary use-case is runtime modification
     /// of groups in the framework.
     ///
-    /// Note: does _not_ return [`Self`] like many other commands. This is because
-    /// it's not intended to be chained as the other commands are.
+    /// Note: does _not_ return [`Self`] like many other commands. This is because it's not
+    /// intended to be chained as the other commands are.
     pub fn group_remove(&mut self, group: &'static CommandGroup) {
         // Iterates through the vector and if a given group _doesn't_ match, we retain it
         self.groups.retain(|&(g, _)| g != group);
@@ -462,8 +454,8 @@ impl StandardFramework {
         self
     }
 
-    /// Specify the function to be called prior to every command's execution.
-    /// If that function returns true, the command will be executed.
+    /// Specify the function to be called prior to every command's execution. If that function
+    /// returns true, the command will be executed.
     ///
     /// # Examples
     ///
@@ -514,8 +506,8 @@ impl StandardFramework {
         self
     }
 
-    /// Specify the function to be called after every command's execution.
-    /// Fourth argument exists if command returned an error which you can handle.
+    /// Specify the function to be called after every command's execution. Fourth argument exists
+    /// if command returned an error which you can handle.
     ///
     /// # Examples
     ///
@@ -539,7 +531,6 @@ impl StandardFramework {
     /// let framework = StandardFramework::new().after(after_hook);
     /// ```
     #[must_use]
-
     pub fn after(mut self, f: AfterHook) -> Self {
         self.after = Some(f);
 
@@ -618,8 +609,16 @@ impl StandardFramework {
 
 #[async_trait]
 impl Framework for StandardFramework {
-    #[instrument(skip(self, ctx, msg))]
-    async fn dispatch(&self, mut ctx: Context, msg: Message) {
+    #[instrument(skip(self, event))]
+    async fn dispatch(&self, event: FullEvent) {
+        let FullEvent::Message {
+            mut ctx,
+            new_message: msg,
+        } = event
+        else {
+            return;
+        };
+
         if self.should_ignore(&msg) {
             return;
         }
@@ -628,7 +627,9 @@ impl Framework for StandardFramework {
 
         stream.take_while_char(char::is_whitespace);
 
-        let prefix = parse::prefix(&ctx, &msg, &mut stream, &self.config).await;
+        let config = self.config.read().clone();
+
+        let prefix = parse::prefix(&ctx, &msg, &mut stream, &config).await;
 
         if prefix.is_some() && stream.rest().is_empty() {
             if let Some(prefix_only) = &self.prefix_only {
@@ -638,7 +639,7 @@ impl Framework for StandardFramework {
             return;
         }
 
-        if prefix.is_none() && !(self.config.no_dm_prefix && msg.is_private()) {
+        if prefix.is_none() && !(config.no_dm_prefix && msg.is_private()) {
             if let Some(normal) = &self.normal_message {
                 normal(&mut ctx, &msg).await;
             }
@@ -651,8 +652,8 @@ impl Framework for StandardFramework {
             &msg,
             &mut stream,
             &self.groups,
-            &self.config,
-            self.help.as_ref().map(|h| h.options.names),
+            &config,
+            self.help.map(|h| h.options.names),
         )
         .await;
 
@@ -685,16 +686,16 @@ impl Framework for StandardFramework {
 
         match invoke {
             Invoke::Help(name) => {
-                if !self.config.allow_dm && msg.is_private() {
+                if !config.allow_dm && msg.is_private() {
                     return;
                 }
 
-                let args = Args::new(stream.rest(), &self.config.delimiters);
+                let args = Args::new(stream.rest(), &config.delimiters);
 
-                let owners = self.config.owners.clone();
                 let groups = self.groups.iter().map(|(g, _)| *g).collect::<Vec<_>>();
 
-                // `parse_command` promises to never return a help invocation if `StandardFramework::help` is `None`.
+                // `parse_command` promises to never return a help invocation if
+                // `StandardFramework::help` is `None`.
                 #[allow(clippy::unwrap_used)]
                 let help = self.help.unwrap();
 
@@ -704,7 +705,8 @@ impl Framework for StandardFramework {
                     }
                 }
 
-                let res = (help.fun)(&mut ctx, &msg, args, help.options, &groups, owners).await;
+                let res =
+                    (help.fun)(&mut ctx, &msg, args, help.options, &groups, config.owners).await;
 
                 if let Some(after) = &self.after {
                     after(&mut ctx, &msg, name, res).await;
@@ -717,7 +719,7 @@ impl Framework for StandardFramework {
                 let mut args = {
                     use std::borrow::Cow;
 
-                    let mut delims = Cow::Borrowed(&self.config.delimiters);
+                    let mut delims = Cow::Borrowed(&config.delimiters);
 
                     // If user has configured the command's own delimiters, use those instead.
                     if !command.options.delimiters.is_empty() {
@@ -763,12 +765,10 @@ impl Framework for StandardFramework {
                 let res = (command.fun)(&mut ctx, &msg, args).await;
 
                 // Check if the command wants to revert the bucket by giving back a ticket.
-                if matches!(res, Err(ref e) if e.is::<RevertBucket>()) {
+                if matches!(&res, Err(e) if e.is::<RevertBucket>()) {
                     let mut buckets = self.buckets.lock().await;
 
-                    if let Some(ref mut bucket) =
-                        command.options.bucket.as_ref().and_then(|b| buckets.get_mut(*b))
-                    {
+                    if let Some(bucket) = command.options.bucket.and_then(|b| buckets.get_mut(b)) {
                         bucket.give(&ctx, &msg).await;
                     }
                 }
@@ -860,33 +860,12 @@ pub(crate) fn has_correct_permissions(
     if options.required_permissions().is_empty() {
         true
     } else {
-        message
-            .guild_field(cache, |guild| {
-                let channel = match guild.channels.get(&message.channel_id) {
-                    Some(Channel::Guild(channel)) => channel,
-                    _ => return false,
-                };
+        message.guild(cache.as_ref()).is_some_and(|guild| {
+            let Some(channel) = guild.channels.get(&message.channel_id) else { return false };
+            let Some(member) = guild.members.get(&message.author.id) else { return false };
 
-                let member = match guild.members.get(&message.author.id) {
-                    Some(member) => member,
-                    None => return false,
-                };
-
-                match guild.user_permissions_in(channel, member) {
-                    Ok(perms) => perms.contains(*options.required_permissions()),
-                    Err(e) => {
-                        tracing::error!(
-                            "Error getting permissions for user {} in channel {}: {}",
-                            member.user.id,
-                            channel.id,
-                            e
-                        );
-
-                        false
-                    },
-                }
-            })
-            .unwrap_or(false)
+            guild.user_permissions_in(channel, member).contains(*options.required_permissions())
+        })
     }
 }
 

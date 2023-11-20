@@ -3,7 +3,7 @@ use crate::model::prelude::*;
 /// Information about a guild scheduled event.
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct ScheduledEvent {
     /// The Id of the scheduled event.
@@ -26,6 +26,8 @@ pub struct ScheduledEvent {
     /// The event's ending time; optional.
     #[serde(rename = "scheduled_end_time")]
     pub end_time: Option<Timestamp>,
+    /// The privacy level of the scheduled event.
+    pub privacy_level: ScheduledEventPrivacyLevel,
     /// The event's status; either Scheduled, Active, Completed, or Canceled.
     pub status: ScheduledEventStatus,
     /// The User that created the event.
@@ -36,6 +38,8 @@ pub struct ScheduledEvent {
     /// Channel, or at some External location.
     #[serde(rename = "entity_type")]
     pub kind: ScheduledEventType,
+    /// The id of an entity associated with a guild scheduled event.
+    pub entity_id: Option<GenericId>,
     /// Optional event location, only required for External events.
     #[serde(rename = "entity_metadata")]
     pub metadata: Option<ScheduledEventMetadata>,
@@ -45,54 +49,63 @@ pub struct ScheduledEvent {
     /// [`GuildId::scheduled_event`] or [`GuildId::scheduled_events`].
     pub user_count: Option<u64>,
     /// The hash of the event's cover image, if present.
-    pub image: Option<String>,
+    pub image: Option<ImageHash>,
 }
 
-/// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-status).
-#[derive(Copy, Clone, Debug)]
-pub enum ScheduledEventStatus {
-    Scheduled = 1,
-    Active = 2,
-    Completed = 3,
-    Canceled = 4,
-    Unknown = !0,
+enum_number! {
+    /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-status).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum ScheduledEventStatus {
+        Scheduled = 1,
+        Active = 2,
+        Completed = 3,
+        Canceled = 4,
+        _ => Unknown(u8),
+    }
 }
 
-enum_number!(ScheduledEventStatus {
-    Scheduled,
-    Active,
-    Completed,
-    Canceled
-});
-
-/// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-entity-types).
-#[derive(Copy, Clone, Debug)]
-pub enum ScheduledEventType {
-    StageInstance = 1,
-    Voice = 2,
-    External = 3,
-    Unknown = !0,
+enum_number! {
+    /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-entity-types).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum ScheduledEventType {
+        StageInstance = 1,
+        Voice = 2,
+        External = 3,
+        _ => Unknown(u8),
+    }
 }
-
-enum_number!(ScheduledEventType {
-    StageInstance,
-    Voice,
-    External
-});
 
 /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-entity-metadata).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct ScheduledEventMetadata {
-    // TODO: Change to `Option<String>` in next version.
     #[serde(default)]
-    pub location: String,
+    pub location: Option<String>,
 }
 
 /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-user-object).
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct ScheduledEventUser {
     #[serde(rename = "guild_scheduled_event_id")]
     pub event_id: ScheduledEventId,
     pub user: User,
     pub member: Option<Member>,
+}
+
+enum_number! {
+    /// See [`ScheduledEvent::privacy_level`].
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#guild-scheduled-event-object-guild-scheduled-event-privacy-level).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum ScheduledEventPrivacyLevel {
+        GuildOnly = 2,
+        _ => Unknown(u8),
+    }
 }

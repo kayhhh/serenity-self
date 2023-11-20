@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 /// Error that can be returned from [`Member::convert`].
 #[non_exhaustive]
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MemberParseError {
     /// Parser was invoked outside a guild.
     OutsideGuild,
@@ -44,7 +44,7 @@ impl ArgumentConvert for Member {
     type Err = MemberParseError;
 
     async fn convert(
-        ctx: &Context,
+        ctx: impl CacheHttp,
         guild_id: Option<GuildId>,
         _channel_id: Option<ChannelId>,
         s: &str,
@@ -54,8 +54,8 @@ impl ArgumentConvert for Member {
         // DON'T use guild.members: it's only populated when guild presences intent is enabled!
 
         // If string is a raw user ID or a mention
-        if let Some(user_id) = s.parse().ok().or_else(|| crate::utils::parse_username(s)) {
-            if let Ok(member) = guild_id.member(ctx, UserId(user_id)).await {
+        if let Some(user_id) = s.parse().ok().or_else(|| crate::utils::parse_user_mention(s)) {
+            if let Ok(member) = guild_id.member(&ctx, user_id).await {
                 return Ok(member);
             }
         }
@@ -64,7 +64,7 @@ impl ArgumentConvert for Member {
 
         // If string is a username+discriminator
         if let Some((name, discrim)) = crate::utils::parse_user_tag(s) {
-            if let Ok(member_results) = guild_id.search_members(ctx, name, Some(100)).await {
+            if let Ok(member_results) = guild_id.search_members(ctx.http(), name, Some(100)).await {
                 if let Some(member) = member_results.into_iter().find(|m| {
                     m.user.name.eq_ignore_ascii_case(name) && m.user.discriminator == discrim
                 }) {
@@ -74,10 +74,10 @@ impl ArgumentConvert for Member {
         }
 
         // If string is username or nickname
-        if let Ok(member_results) = guild_id.search_members(ctx, s, Some(100)).await {
+        if let Ok(member_results) = guild_id.search_members(ctx.http(), s, Some(100)).await {
             if let Some(member) = member_results.into_iter().find(|m| {
                 m.user.name.eq_ignore_ascii_case(s)
-                    || m.nick.as_ref().map_or(false, |nick| nick.eq_ignore_ascii_case(s))
+                    || m.nick.as_ref().is_some_and(|nick| nick.eq_ignore_ascii_case(s))
             }) {
                 return Ok(member);
             }

@@ -1,59 +1,46 @@
 use std::cmp::Ordering;
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-use std::error::Error as StdError;
 use std::fmt;
 
 #[cfg(feature = "model")]
 use crate::builder::EditRole;
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::cache::Cache;
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-use crate::cache::FromStrAndCache;
 #[cfg(feature = "model")]
 use crate::http::Http;
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::internal::prelude::*;
 use crate::model::prelude::*;
 use crate::model::utils::is_false;
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-use crate::utils::parse_role;
 
-/// Information about a role within a guild. A role represents a set of
-/// permissions, and can be attached to one or multiple users. A role has
-/// various miscellaneous configurations, such as being assigned a colour. Roles
-/// are unique per guild and do not cross over to other guilds in any way, and
-/// can have channel-specific permission overrides in addition to guild-level
+/// Information about a role within a guild. A role represents a set of permissions, and can be
+/// attached to one or multiple users. A role has various miscellaneous configurations, such as
+/// being assigned a colour. Roles are unique per guild and do not cross over to other guilds in
+/// any way, and can have channel-specific permission overrides in addition to guild-level
 /// permissions.
 ///
 /// [Discord docs](https://discord.com/developers/docs/topics/permissions#role-object).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct Role {
     /// The Id of the role. Can be used to calculate the role's creation date.
     pub id: RoleId,
     /// The Id of the Guild the Role is in.
+    #[serde(default)]
     pub guild_id: GuildId,
-    /// The colour of the role. This is an ergonomic representation of the inner
-    /// value.
-    #[cfg(feature = "utils")]
+    /// The colour of the role.
     #[serde(rename = "color")]
     pub colour: Colour,
-    /// The colour of the role.
-    #[cfg(not(feature = "utils"))]
-    #[serde(rename = "color")]
-    pub colour: u32,
     /// Indicator of whether the role is pinned above lesser roles.
     ///
-    /// In the client, this causes [`Member`]s in the role to be seen above
-    /// those in roles with a lower [`Self::position`].
+    /// In the client, this causes [`Member`]s in the role to be seen above those in roles with a
+    /// lower [`Self::position`].
     pub hoist: bool,
     /// Indicator of whether the role is managed by an integration service.
     pub managed: bool,
-    /// Indicator of whether the role can be mentioned, similar to mentioning a
-    /// specific member or `@everyone`.
+    /// Indicator of whether the role can be mentioned, similar to mentioning a specific member or
+    /// `@everyone`.
     ///
-    /// Only members of the role will be notified if a role is mentioned with
-    /// this set to `true`.
+    /// Only members of the role will be notified if a role is mentioned with this set to `true`.
     #[serde(default)]
     pub mentionable: bool,
     /// The name of the role.
@@ -62,70 +49,24 @@ pub struct Role {
     ///
     /// See the [`permissions`] module for more information.
     ///
-    /// [`permissions`]: super::permissions
+    /// [`permissions`]: crate::model::permissions
     pub permissions: Permissions,
-    /// The role's position in the position list. Roles are considered higher in
-    /// hierarchy if their position is higher.
+    /// The role's position in the position list. Roles are considered higher in hierarchy if their
+    /// position is higher.
     ///
     /// The `@everyone` role is usually either `-1` or `0`.
-    pub position: i64,
-    /// The tags this role has. It can be used to determine if this role is a special role in this guild
-    /// such as guild subscriber role, or if the role is linked to an [`Integration`] or a bot.
+    pub position: u16,
+    /// The tags this role has. It can be used to determine if this role is a special role in this
+    /// guild such as guild subscriber role, or if the role is linked to an [`Integration`] or a
+    /// bot.
     ///
     /// [`Integration`]: super::Integration
     #[serde(default)]
     pub tags: RoleTags,
     /// Role icon image hash.
-    ///
-    /// `role-icons/<role_id>/<hash>.png` - PNG, JPEG, WEBP
-    /// `role-icons/<role_id>/a_<hash>.gif` - GIF, Animated WEBP
-    pub icon: Option<String>,
+    pub icon: Option<ImageHash>,
     /// Role unicoded image.
     pub unicode_emoji: Option<String>,
-}
-
-/// Helper for deserialization without a `GuildId` but then later updated to the correct `GuildId`.
-///
-/// The only difference to `Role` is `#[serde(default)]` on `guild_id`.
-#[derive(Deserialize)]
-pub(crate) struct InterimRole {
-    pub id: RoleId,
-    #[serde(default)]
-    pub guild_id: GuildId,
-    #[cfg(feature = "utils")]
-    #[serde(rename = "color")]
-    pub colour: Colour,
-    #[cfg(not(feature = "utils"))]
-    #[serde(rename = "color")]
-    pub colour: u32,
-    pub hoist: bool,
-    pub managed: bool,
-    #[serde(default)]
-    pub mentionable: bool,
-    pub name: String,
-    pub permissions: Permissions,
-    pub position: i64,
-    #[serde(default)]
-    pub tags: RoleTags,
-}
-
-impl From<InterimRole> for Role {
-    fn from(r: InterimRole) -> Self {
-        Self {
-            id: r.id,
-            guild_id: r.guild_id,
-            colour: r.colour,
-            hoist: r.hoist,
-            managed: r.managed,
-            mentionable: r.mentionable,
-            name: r.name,
-            permissions: r.permissions,
-            position: r.position,
-            tags: r.tags,
-            icon: None,
-            unicode_emoji: None,
-        }
-    }
 }
 
 #[cfg(feature = "model")]
@@ -136,13 +77,12 @@ impl Role {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the current user lacks permission to
-    /// delete this role.
+    /// Returns [`Error::Http`] if the current user lacks permission to delete this role.
     ///
     /// [Manage Roles]: Permissions::MANAGE_ROLES
     #[inline]
     pub async fn delete(&mut self, http: impl AsRef<Http>) -> Result<()> {
-        http.as_ref().delete_role(self.guild_id.0, self.id.0).await
+        http.as_ref().delete_role(self.guild_id, self.id, None).await
     }
 
     /// Edits a [`Role`], optionally setting its new fields.
@@ -151,28 +91,17 @@ impl Role {
     ///
     /// # Examples
     ///
-    /// Make a role hoisted:
-    ///
-    /// ```rust,ignore
-    /// # use serenity::model::id::RoleId;
-    /// # let role = RoleId(7).to_role_cached(&cache).unwrap();
-    /// // assuming a `role` has already been bound
-    /// role.edit(|r| r.hoist(true));
-    /// ```
+    /// See the documentation of [`EditRole`] for details.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Http`] if the current user does not
-    /// have permission to Manage Roles.
+    /// Returns [`Error::Http`] if the current user does not have permission to Manage Roles.
     ///
     /// [Manage Roles]: Permissions::MANAGE_ROLES
     #[inline]
-    pub async fn edit(
-        &self,
-        http: impl AsRef<Http>,
-        f: impl FnOnce(&mut EditRole) -> &mut EditRole,
-    ) -> Result<Role> {
-        self.guild_id.edit_role(http, self.id, f).await
+    pub async fn edit(&mut self, http: impl AsRef<Http>, builder: EditRole<'_>) -> Result<()> {
+        *self = self.guild_id.edit_role(http.as_ref(), self.id, builder).await?;
+        Ok(())
     }
 
     /// Check that the role has the given permission.
@@ -184,9 +113,9 @@ impl Role {
 
     /// Checks whether the role has all of the given permissions.
     ///
-    /// The 'precise' argument is used to check if the role's permissions are
-    /// precisely equivalent to the given permissions. If you need only check
-    /// that the role has at least the given permissions, pass `false`.
+    /// The 'precise' argument is used to check if the role's permissions are precisely equivalent
+    /// to the given permissions. If you need only check that the role has at least the given
+    /// permissions, pass `false`.
     #[inline]
     #[must_use]
     pub fn has_permissions(&self, permissions: Permissions, precise: bool) -> bool {
@@ -265,49 +194,10 @@ impl<'a> From<&'a Role> for RoleId {
     }
 }
 
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-#[derive(Debug)]
-pub enum RoleParseError {
-    NotPresentInCache,
-    InvalidRole,
-}
-
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-impl fmt::Display for RoleParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotPresentInCache => f.write_str("not present in cache"),
-            Self::InvalidRole => f.write_str("invalid role"),
-        }
-    }
-}
-
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-impl StdError for RoleParseError {}
-
-#[cfg(all(feature = "cache", feature = "model", feature = "utils"))]
-impl FromStrAndCache for Role {
-    type Err = RoleParseError;
-
-    fn from_str<CRL>(cache: CRL, s: &str) -> StdResult<Self, Self::Err>
-    where
-        CRL: AsRef<Cache> + Send + Sync,
-    {
-        match parse_role(s) {
-            Some(x) => match RoleId(x).to_role_cached(&cache) {
-                Some(role) => Ok(role),
-                None => Err(RoleParseError::NotPresentInCache),
-            },
-            None => Err(RoleParseError::InvalidRole),
-        }
-    }
-}
-
 /// The tags of a [`Role`].
 ///
 /// [Discord docs](https://discord.com/developers/docs/topics/permissions#role-object-role-tags-structure).
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct RoleTags {
     /// The Id of the bot the [`Role`] belongs to.
@@ -315,12 +205,20 @@ pub struct RoleTags {
     /// The Id of the integration the [`Role`] belongs to.
     pub integration_id: Option<IntegrationId>,
     /// Whether this is the guild's premium subscriber role.
-    #[serde(default, skip_serializing_if = "is_false", with = "premium_subscriber")]
+    #[serde(default, skip_serializing_if = "is_false", with = "bool_as_option_unit")]
     pub premium_subscriber: bool,
+    /// The id of this role's subscription sku and listing.
+    pub subscription_listing_id: Option<SkuId>,
+    /// Whether this role is available for purchase.
+    #[serde(default, skip_serializing_if = "is_false", with = "bool_as_option_unit")]
+    pub available_for_purchase: bool,
+    /// Whether this role is a guild's linked role.
+    #[serde(default, skip_serializing_if = "is_false", with = "bool_as_option_unit")]
+    pub guild_connections: bool,
 }
 
 /// A premium subscriber role is reported with the field present and the value `null`.
-mod premium_subscriber {
+mod bool_as_option_unit {
     use std::fmt;
 
     use serde::de::{Error, Visitor};
@@ -357,9 +255,8 @@ mod premium_subscriber {
 
 #[cfg(test)]
 mod tests {
-    use serde_test::{assert_tokens, Token};
-
     use super::RoleTags;
+    use crate::json::{assert_json, json};
 
     #[test]
     fn premium_subscriber_role_serde() {
@@ -367,21 +264,15 @@ mod tests {
             bot_id: None,
             integration_id: None,
             premium_subscriber: true,
+            subscription_listing_id: None,
+            available_for_purchase: false,
+            guild_connections: false,
         };
 
-        assert_tokens(&value, &[
-            Token::Struct {
-                name: "RoleTags",
-                len: 3,
-            },
-            Token::Str("bot_id"),
-            Token::None,
-            Token::Str("integration_id"),
-            Token::None,
-            Token::Str("premium_subscriber"),
-            Token::None,
-            Token::StructEnd,
-        ]);
+        assert_json(
+            &value,
+            json!({"bot_id": null, "integration_id": null, "premium_subscriber": null, "subscription_listing_id": null}),
+        );
     }
 
     #[test]
@@ -390,18 +281,14 @@ mod tests {
             bot_id: None,
             integration_id: None,
             premium_subscriber: false,
+            subscription_listing_id: None,
+            available_for_purchase: false,
+            guild_connections: false,
         };
 
-        assert_tokens(&value, &[
-            Token::Struct {
-                name: "RoleTags",
-                len: 2,
-            },
-            Token::Str("bot_id"),
-            Token::None,
-            Token::Str("integration_id"),
-            Token::None,
-            Token::StructEnd,
-        ]);
+        assert_json(
+            &value,
+            json!({"bot_id": null, "integration_id": null, "subscription_listing_id": null}),
+        );
     }
 }

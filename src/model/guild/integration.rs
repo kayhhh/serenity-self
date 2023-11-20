@@ -3,46 +3,47 @@ use crate::model::Timestamp;
 
 /// Various information about integrations.
 ///
-/// [Discord docs](https://discord.com/developers/docs/resources/guild#integration-object).
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#integration-object),
+/// [extra fields 1](https://discord.com/developers/docs/topics/gateway-events#integration-create),
+/// [extra fields 2](https://discord.com/developers/docs/topics/gateway-events#integration-update),
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct Integration {
     pub id: IntegrationId,
-    pub guild_id: GuildId,
-    pub account: IntegrationAccount,
-    pub enabled: bool,
-    #[serde(rename = "expire_behaviour")]
-    pub expire_behaviour: Option<IntegrationExpireBehaviour>,
-    pub expire_grace_period: Option<u64>,
+    pub name: String,
     #[serde(rename = "type")]
     pub kind: String,
-    pub name: String,
-    pub role_id: Option<RoleId>,
-    pub synced_at: Option<Timestamp>,
+    pub enabled: bool,
     pub syncing: Option<bool>,
-    pub user: Option<User>,
+    pub role_id: Option<RoleId>,
     pub enable_emoticons: Option<bool>,
+    #[serde(rename = "expire_behavior")]
+    pub expire_behaviour: Option<IntegrationExpireBehaviour>,
+    pub expire_grace_period: Option<u64>,
+    pub user: Option<User>,
+    pub account: IntegrationAccount,
+    pub synced_at: Option<Timestamp>,
     pub subscriber_count: Option<u64>,
     pub revoked: Option<bool>,
     pub application: Option<IntegrationApplication>,
+    pub scopes: Option<Vec<Scope>>,
+    /// Only present in [`IntegrationCreateEvent`] and [`IntegrationUpdateEvent`].
+    pub guild_id: Option<GuildId>,
 }
 
-/// The behavior once the integration expires.
-///
-/// [Discord docs](https://discord.com/developers/docs/resources/guild#integration-object-integration-expire-behaviors).
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-#[non_exhaustive]
-#[repr(u8)]
-pub enum IntegrationExpireBehaviour {
-    RemoveRole = 0,
-    Kick = 1,
-    Unknown = !0,
+enum_number! {
+    /// The behavior once the integration expires.
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/resources/guild#integration-object-integration-expire-behaviors).
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum IntegrationExpireBehaviour {
+        RemoveRole = 0,
+        Kick = 1,
+        _ => Unknown(u8),
+    }
 }
-
-enum_number!(IntegrationExpireBehaviour {
-    RemoveRole,
-    Kick
-});
 
 impl From<Integration> for IntegrationId {
     /// Gets the Id of integration.
@@ -69,7 +70,7 @@ pub struct IntegrationAccount {
 pub struct IntegrationApplication {
     pub id: ApplicationId,
     pub name: String,
-    pub icon: Option<String>,
+    pub icon: Option<ImageHash>,
     pub description: String,
     pub bot: Option<User>,
 }

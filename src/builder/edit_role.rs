@@ -1,21 +1,18 @@
-use std::collections::HashMap;
-
-#[cfg(feature = "model")]
-use crate::http::Http;
+#[cfg(feature = "http")]
+use super::Builder;
+use super::CreateAttachment;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
-use crate::json::from_number;
-#[cfg(feature = "model")]
-use crate::model::channel::AttachmentType;
-use crate::model::guild::Role;
-use crate::model::Permissions;
-#[cfg(feature = "model")]
-use crate::utils::encode_image;
+use crate::model::prelude::*;
 
 /// A builder to create or edit a [`Role`] for use via a number of model methods.
 ///
 /// These are:
 ///
 /// - [`PartialGuild::create_role`]
+/// - [`PartialGuild::edit_role`]
 /// - [`Guild::create_role`]
 /// - [`Guild::edit_role`]
 /// - [`GuildId::create_role`]
@@ -29,122 +26,167 @@ use crate::utils::encode_image;
 /// Create a hoisted, mentionable role named `"a test role"`:
 ///
 /// ```rust,no_run
-/// # use serenity::{model::id::{ChannelId, GuildId}, http::Http};
+/// # use serenity::builder::EditRole;
+/// # use serenity::http::Http;
+/// # use serenity::model::id::GuildId;
 /// # use std::sync::Arc;
 /// #
-/// # let http = Arc::new(Http::new("token"));
-/// # let (channel_id, guild_id) = (ChannelId(1), GuildId(2));
+/// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+/// # let http: Arc<Http> = unimplemented!();
+/// # let guild_id: GuildId = unimplemented!();
 /// #
-/// // assuming a `channel_id` and `guild_id` has been bound
-///
-/// let role = guild_id.create_role(&http, |r| r.hoist(true).mentionable(true).name("a test role"));
+/// // assuming a `guild_id` has been bound
+/// let builder = EditRole::new().name("a test role").hoist(true).mentionable(true);
+/// let role = guild_id.create_role(&http, builder).await?;
+/// # Ok(())
+/// # }
 /// ```
 ///
-/// [`PartialGuild::create_role`]: crate::model::guild::PartialGuild::create_role
-/// [`Guild::create_role`]: crate::model::guild::Guild::create_role
-/// [`Guild::edit_role`]: crate::model::guild::Guild::edit_role
-/// [`GuildId::create_role`]: crate::model::id::GuildId::create_role
-/// [`GuildId::edit_role`]: crate::model::id::GuildId::edit_role
-#[derive(Clone, Debug, Default)]
-pub struct EditRole(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild#modify-guild-role)
+#[derive(Clone, Debug, Default, Serialize)]
+#[must_use]
+pub struct EditRole<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    permissions: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "color")]
+    colour: Option<Colour>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hoist: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    icon: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unicode_emoji: Option<Option<String>>,
 
-impl EditRole {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mentionable: Option<bool>,
+
+    #[serde(skip)]
+    position: Option<u16>,
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> EditRole<'a> {
+    /// Equivalent to [`Self::default`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Creates a new builder with the values of the given [`Role`].
-    #[must_use]
-    pub fn new(role: &Role) -> Self {
-        let mut map = HashMap::with_capacity(9);
-
-        #[cfg(feature = "utils")]
-        {
-            map.insert("color", from_number(role.colour.0));
+    pub fn from_role(role: &Role) -> Self {
+        EditRole {
+            hoist: Some(role.hoist),
+            mentionable: Some(role.mentionable),
+            name: Some(role.name.clone()),
+            permissions: Some(role.permissions.bits()),
+            position: Some(role.position),
+            colour: Some(role.colour),
+            unicode_emoji: role.unicode_emoji.as_ref().map(|v| Some(v.clone())),
+            audit_log_reason: None,
+            // TODO: Do we want to download role.icon?
+            icon: None,
         }
-
-        #[cfg(not(feature = "utils"))]
-        {
-            map.insert("color", from_number(role.colour));
-        }
-
-        map.insert("hoist", Value::from(role.hoist));
-        map.insert("managed", Value::from(role.managed));
-        map.insert("mentionable", Value::from(role.mentionable));
-        map.insert("name", Value::from(role.name.clone()));
-        map.insert("permissions", from_number(role.permissions.bits()));
-        map.insert("position", from_number(role.position));
-
-        if let Some(unicode_emoji) = &role.unicode_emoji {
-            map.insert("unicode_emoji", Value::String(unicode_emoji.clone()));
-        }
-
-        if let Some(icon) = &role.icon {
-            map.insert("icon", Value::String(icon.clone()));
-        }
-
-        EditRole(map)
     }
 
-    /// Sets the colour of the role.
-    pub fn colour(&mut self, colour: u64) -> &mut Self {
-        self.0.insert("color", from_number(colour));
+    /// Set the colour of the role.
+    pub fn colour(mut self, colour: impl Into<Colour>) -> Self {
+        self.colour = Some(colour.into());
         self
     }
 
-    /// Whether or not to hoist the role above lower-positioned role in the user
-    /// list.
-    pub fn hoist(&mut self, hoist: bool) -> &mut Self {
-        self.0.insert("hoist", Value::from(hoist));
+    /// Whether or not to hoist the role above lower-positioned roles in the user list.
+    pub fn hoist(mut self, hoist: bool) -> Self {
+        self.hoist = Some(hoist);
         self
     }
 
-    /// Whether or not to make the role mentionable, notifying its users.
-    pub fn mentionable(&mut self, mentionable: bool) -> &mut Self {
-        self.0.insert("mentionable", Value::from(mentionable));
+    /// Whether or not to make the role mentionable, upon which users with that role will be
+    /// notified.
+    pub fn mentionable(mut self, mentionable: bool) -> Self {
+        self.mentionable = Some(mentionable);
         self
     }
 
-    /// The name of the role to set.
-    pub fn name<S: ToString>(&mut self, name: S) -> &mut Self {
-        self.0.insert("name", Value::from(name.to_string()));
+    /// Set the role's name.
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
         self
     }
 
-    /// The set of permissions to assign the role.
-    pub fn permissions(&mut self, permissions: Permissions) -> &mut Self {
-        self.0.insert("permissions", from_number(permissions.bits()));
+    /// Set the role's permissions.
+    pub fn permissions(mut self, permissions: Permissions) -> Self {
+        self.permissions = Some(permissions.bits());
         self
     }
 
-    /// The position to assign the role in the role list. This correlates to the
-    /// role's position in the user list.
-    pub fn position(&mut self, position: u8) -> &mut Self {
-        self.0.insert("position", from_number(position));
+    /// Set the role's position in the role list. This correlates to the role's position in the
+    /// user list.
+    pub fn position(mut self, position: u16) -> Self {
+        self.position = Some(position);
         self
     }
 
-    /// The unicode emoji to set as the role image.
-    pub fn unicode_emoji<S: ToString>(&mut self, unicode_emoji: S) -> &mut Self {
-        self.0.remove("icon");
-        self.0.insert("unicode_emoji", Value::String(unicode_emoji.to_string()));
-
+    /// Set the role icon to a unicode emoji.
+    pub fn unicode_emoji(mut self, unicode_emoji: Option<String>) -> Self {
+        self.unicode_emoji = Some(unicode_emoji);
+        self.icon = Some(None);
         self
     }
 
-    /// The image to set as the role icon.
+    /// Set the role icon to a custom image.
+    pub fn icon(mut self, icon: Option<&CreateAttachment>) -> Self {
+        self.icon = Some(icon.map(CreateAttachment::to_base64));
+        self.unicode_emoji = Some(None);
+        self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
+    }
+}
+
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for EditRole<'a> {
+    type Context<'ctx> = (GuildId, Option<RoleId>);
+    type Built = Role;
+
+    /// Edits the role.
+    ///
+    /// **Note**: Requires the [Manage Roles] permission.
     ///
     /// # Errors
     ///
-    /// May error if the icon is a URL and the HTTP request fails, or if the icon is a file
-    /// on a path that doesn't exist.
-    #[cfg(feature = "model")]
-    pub async fn icon<'a>(
-        &mut self,
-        http: impl AsRef<Http>,
-        icon: impl Into<AttachmentType<'a>>,
-    ) -> Result<&mut Self> {
-        let icon_data = icon.into().data(&http.as_ref().client).await?;
+    /// If the `cache` is enabled, returns a [`ModelError::InvalidPermissions`] if the current user
+    /// lacks permission. Otherwise returns [`Error::Http`], as well as if invalid data is given.
+    ///
+    /// [Manage Roles]: Permissions::MANAGE_ROLES
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        let (guild_id, role_id) = ctx;
 
-        self.0.remove("unicode_emoji");
-        self.0.insert("icon", Value::from(encode_image(&icon_data)));
+        #[cfg(feature = "cache")]
+        crate::utils::user_has_guild_perms(&cache_http, guild_id, Permissions::MANAGE_ROLES)?;
 
-        Ok(self)
+        let http = cache_http.http();
+        let role = match role_id {
+            Some(role_id) => {
+                http.edit_role(guild_id, role_id, &self, self.audit_log_reason).await?
+            },
+            None => http.create_role(guild_id, &self, self.audit_log_reason).await?,
+        };
+
+        if let Some(position) = self.position {
+            http.edit_role_position(guild_id, role.id, position, self.audit_log_reason).await?;
+        }
+        Ok(role)
     }
 }

@@ -3,8 +3,8 @@ mod commands;
 use std::env;
 
 use serenity::async_trait;
-use serenity::model::application::command::Command;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
+use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
+use serenity::model::application::{Command, Interaction};
 use serenity::model::gateway::Ready;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
@@ -14,25 +14,26 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            println!("Received command interaction: {:#?}", command);
+        if let Interaction::Command(command) = interaction {
+            println!("Received command interaction: {command:#?}");
 
             let content = match command.data.name.as_str() {
-                "ping" => commands::ping::run(&command.data.options),
-                "id" => commands::id::run(&command.data.options),
-                "attachmentinput" => commands::attachmentinput::run(&command.data.options),
-                _ => "not implemented :(".to_string(),
+                "ping" => Some(commands::ping::run(&command.data.options())),
+                "id" => Some(commands::id::run(&command.data.options())),
+                "attachmentinput" => Some(commands::attachmentinput::run(&command.data.options())),
+                "modal" => {
+                    commands::modal::run(&ctx, &command).await.unwrap();
+                    None
+                },
+                _ => Some("not implemented :(".to_string()),
             };
 
-            if let Err(why) = command
-                .create_interaction_response(&ctx.http, |response| {
-                    response
-                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| message.content(content))
-                })
-                .await
-            {
-                println!("Cannot respond to slash command: {}", why);
+            if let Some(content) = content {
+                let data = CreateInteractionResponseMessage::new().content(content);
+                let builder = CreateInteractionResponse::Message(data);
+                if let Err(why) = command.create_response(&ctx.http, builder).await {
+                    println!("Cannot respond to slash command: {why}");
+                }
             }
         }
     }
@@ -40,31 +41,31 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);
 
-        let guild_id = GuildId(
+        let guild_id = GuildId::new(
             env::var("GUILD_ID")
                 .expect("Expected GUILD_ID in environment")
                 .parse()
                 .expect("GUILD_ID must be an integer"),
         );
 
-        let commands = GuildId::set_application_commands(&guild_id, &ctx.http, |commands| {
-            commands
-                .create_application_command(|command| commands::ping::register(command))
-                .create_application_command(|command| commands::id::register(command))
-                .create_application_command(|command| commands::welcome::register(command))
-                .create_application_command(|command| commands::numberinput::register(command))
-                .create_application_command(|command| commands::attachmentinput::register(command))
-        })
-        .await;
+        let commands = guild_id
+            .set_commands(&ctx.http, vec![
+                commands::ping::register(),
+                commands::id::register(),
+                commands::welcome::register(),
+                commands::numberinput::register(),
+                commands::attachmentinput::register(),
+                commands::modal::register(),
+            ])
+            .await;
 
-        println!("I now have the following guild slash commands: {:#?}", commands);
+        println!("I now have the following guild slash commands: {commands:#?}");
 
-        let guild_command = Command::create_global_application_command(&ctx.http, |command| {
-            commands::wonderful_command::register(command)
-        })
-        .await;
+        let guild_command =
+            Command::create_global_command(&ctx.http, commands::wonderful_command::register())
+                .await;
 
-        println!("I created the following global slash command: {:#?}", guild_command);
+        println!("I created the following global slash command: {guild_command:#?}");
     }
 }
 
@@ -81,9 +82,9 @@ async fn main() {
 
     // Finally, start a single shard, and start listening to events.
     //
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
+    // Shards will automatically attempt to reconnect, and will perform exponential backoff until
+    // it reconnects.
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }

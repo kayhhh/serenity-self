@@ -10,9 +10,9 @@ use crate::model::id::{ChannelId, GuildId, UserId};
 type DynamicPrefixHook =
     for<'fut> fn(&'fut Context, &'fut Message) -> BoxFuture<'fut, Option<String>>;
 
-/// A configuration struct for deciding whether the framework
-/// should allow optional whitespace between prefixes, group prefixes and command names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A configuration struct for deciding whether the framework should allow optional whitespace
+/// between prefixes, group prefixes and command names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WithWhiteSpace {
     pub prefixes: bool,
     pub groups: bool,
@@ -63,11 +63,10 @@ impl From<(bool, bool, bool)> for WithWhiteSpace {
     }
 }
 
-/// The configuration to use for a [`StandardFramework`] associated with a [`Client`]
-/// instance.
+/// The configuration to use for a [`StandardFramework`] associated with a [`Client`] instance.
 ///
-/// This allows setting configurations like the depth to search for commands,
-/// whether to treat mentions like a command prefix, etc.
+/// This allows setting configurations like the depth to search for commands, whether to treat
+/// mentions like a command prefix, etc.
 ///
 /// To see the default values, refer to the [default implementation].
 ///
@@ -87,20 +86,22 @@ impl From<(bool, bool, bool)> for WithWhiteSpace {
 ///
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let token = std::env::var("DISCORD_BOT_TOKEN")?;
-/// let framework =
-///     StandardFramework::new().configure(|c| c.on_mention(Some(UserId(5))).prefix("~"));
+///
+/// let framework = StandardFramework::new();
+/// framework.configure(|c| c.on_mention(Some(UserId::new(5))).prefix("~"));
 ///
 /// let mut client = Client::builder(&token, GatewayIntents::default())
 ///     .event_handler(Handler)
 ///     .framework(framework)
 ///     .await?;
-/// #     Ok(())
+/// # Ok(())
 /// # }
 /// ```
 ///
 /// [`Client`]: crate::Client
 /// [`StandardFramework`]: super::StandardFramework
 /// [default implementation]: Self::default
+#[derive(Clone)]
 pub struct Configuration {
     #[doc(hidden)]
     pub allow_dm: bool,
@@ -146,8 +147,8 @@ impl Configuration {
         self
     }
 
-    /// Whether to allow whitespace being optional between a prefix/group-prefix/command and
-    /// a command.
+    /// Whether to allow whitespace being optional between a prefix/group-prefix/command and a
+    /// command.
     ///
     /// **Note**: Defaults to `false` (for prefixes), `true` (commands), `true` (group prefixes).
     ///
@@ -174,8 +175,9 @@ impl Configuration {
         self
     }
 
-    /// Whether the framework should split the message by a space first to parse the group or command.
-    /// If set to false, it will only test part of the message by the *length* of the group's or command's names.
+    /// Whether the framework should split the message by a space first to parse the group or
+    /// command. If set to false, it will only test part of the message by the *length* of the
+    /// group's or command's names.
     ///
     /// **Note**: Defaults to `true`
     pub fn by_space(&mut self, b: bool) -> &mut Self {
@@ -197,8 +199,10 @@ impl Configuration {
     /// use serenity::framework::StandardFramework;
     /// use serenity::model::id::ChannelId;
     ///
-    /// let framework = StandardFramework::new()
-    ///     .configure(|c| c.allowed_channels(vec![ChannelId(7), ChannelId(77)].into_iter().collect()));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| {
+    ///     c.allowed_channels(vec![ChannelId::new(7), ChannelId::new(77)].into_iter().collect())
+    /// });
     /// ```
     pub fn allowed_channels(&mut self, channels: HashSet<ChannelId>) -> &mut Self {
         self.allowed_channels = channels;
@@ -219,8 +223,10 @@ impl Configuration {
     /// use serenity::framework::StandardFramework;
     /// use serenity::model::id::GuildId;
     ///
-    /// let framework = StandardFramework::new()
-    ///     .configure(|c| c.blocked_guilds(vec![GuildId(7), GuildId(77)].into_iter().collect()));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| {
+    ///     c.blocked_guilds(vec![GuildId::new(7), GuildId::new(77)].into_iter().collect())
+    /// });
     /// ```
     pub fn blocked_guilds(&mut self, guilds: HashSet<GuildId>) -> &mut Self {
         self.blocked_guilds = guilds;
@@ -243,8 +249,10 @@ impl Configuration {
     /// use serenity::framework::StandardFramework;
     /// use serenity::model::id::UserId;
     ///
-    /// let framework = StandardFramework::new()
-    ///     .configure(|c| c.blocked_users(vec![UserId(7), UserId(77)].into_iter().collect()));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| {
+    ///     c.blocked_users(vec![UserId::new(7), UserId::new(77)].into_iter().collect())
+    /// });
     /// ```
     pub fn blocked_users(&mut self, users: HashSet<UserId>) -> &mut Self {
         self.blocked_users = users;
@@ -279,8 +287,8 @@ impl Configuration {
     ///
     /// let disabled = vec!["ping"].into_iter().map(|x| x.to_string()).collect();
     ///
-    /// let framework =
-    ///     StandardFramework::new().group(&PENG_GROUP).configure(|c| c.disabled_commands(disabled));
+    /// let framework = StandardFramework::new().group(&PENG_GROUP);
+    /// framework.configure(|c| c.disabled_commands(disabled));
     /// ```
     #[inline]
     pub fn disabled_commands(&mut self, commands: HashSet<String>) -> &mut Self {
@@ -289,29 +297,27 @@ impl Configuration {
         self
     }
 
-    /// Sets the prefix to respond to dynamically, in addition to the one
-    /// configured with [`Self::prefix`] or [`Self::prefixes`]. This is useful if you want
-    /// to have user configurable per-guild or per-user prefixes, such as by
-    /// fetching a guild's prefix from a database accessible via
-    /// [`Context::data`].
+    /// Sets the prefix to respond to dynamically, in addition to the one configured with
+    /// [`Self::prefix`] or [`Self::prefixes`]. This is useful if you want to have user
+    /// configurable per-guild or per-user prefixes, such as by fetching a guild's prefix from a
+    /// database accessible via [`Context::data`].
     ///
-    /// Return [`None`] to not have a special prefix for the dispatch and to only
-    /// use the configured prefix from [`Self::prefix`] or [`Self::prefixes`].
+    /// Return [`None`] to not have a special prefix for the dispatch and to only use the
+    /// configured prefix from [`Self::prefix`] or [`Self::prefixes`].
     ///
     /// This method can be called many times to add more dynamic prefix hooks.
     ///
     /// **Note**: Defaults to no dynamic prefix check.
     ///
-    /// **Note**: If using dynamic_prefix *without* [`Self::prefix`] or [`Self::prefixes`],
-    /// there will still be the default framework prefix of `"~"`. You can disable
-    /// the default prefix by setting the prefix to an empty string `""` with
-    /// [`Self::prefix`].
+    /// **Note**: If using dynamic_prefix *without* [`Self::prefix`] or [`Self::prefixes`], there
+    /// will still be the default framework prefix of `"~"`. You can disable the default prefix by
+    /// setting the prefix to an empty string `""` with [`Self::prefix`].
     ///
     /// # Examples
     ///
-    /// If the Id of the channel is divisible by 5, use the prefix `"!"`,
-    /// otherwise use `"*"`. The default framework prefix `"~"` will always be
-    /// valid in addition to the one returned by dynamic_prefix.
+    /// If the Id of the channel is divisible by 5, use the prefix `"!"`, otherwise use `"*"`. The
+    /// default framework prefix `"~"` will always be valid in addition to the one returned by
+    /// dynamic_prefix.
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -319,9 +325,9 @@ impl Configuration {
     ///
     /// let framework = StandardFramework::new().configure(|c| {
     ///     c.dynamic_prefix(|_, msg| {
-    ///         Box::pin(
-    ///             async move { Some(if msg.channel_id.0 % 5 == 0 { "!" } else { "*" }.to_string()) },
-    ///         )
+    ///         Box::pin(async move {
+    ///             Some(if msg.channel_id.get() % 5 == 0 { "!" } else { "*" }.to_string())
+    ///         })
     ///     })
     /// });
     /// ```
@@ -333,11 +339,12 @@ impl Configuration {
     /// # use serenity::prelude::*;
     /// use serenity::framework::StandardFramework;
     ///
-    /// let framework = StandardFramework::new().configure(|c| {
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| {
     ///     c.dynamic_prefix(|_, msg| {
-    ///         Box::pin(
-    ///             async move { Some(if msg.channel_id.0 % 5 == 0 { "!" } else { "*" }.to_string()) },
-    ///         )
+    ///         Box::pin(async move {
+    ///             Some(if msg.channel_id.get() % 5 == 0 { "!" } else { "*" }.to_string())
+    ///         })
     ///     })
     ///     .prefix("") // This disables the default prefix "~"
     /// });
@@ -353,8 +360,8 @@ impl Configuration {
 
     /// Whether the bot should respond to other bots.
     ///
-    /// For example, if this is set to false, then the bot will respond to any
-    /// other bots including itself.
+    /// For example, if this is set to false, then the bot will respond to any other bots including
+    /// itself.
     ///
     /// **Note**: Defaults to `true`.
     pub fn ignore_bots(&mut self, ignore_bots: bool) -> &mut Self {
@@ -380,18 +387,16 @@ impl Configuration {
     ///
     /// # Examples
     ///
-    /// Setting this to an ID will allow the following types of mentions to be
-    /// responded to:
+    /// Setting this to an ID will allow the following types of mentions to be responded to:
     ///
     /// ```ignore
     /// <@245571012924538880> about
     /// <@!245571012924538880> about
     /// ```
     ///
-    /// The former is a direct mention, while the latter is a nickname mention,
-    /// which aids mobile devices in determining whether to display a user's
-    /// nickname. It has no real meaning for your bot, and the library
-    /// encourages you to ignore differentiating between the two.
+    /// The former is a direct mention, while the latter is a nickname mention, which aids mobile
+    /// devices in determining whether to display a user's nickname. It has no real meaning for
+    /// your bot, and the library encourages you to ignore differentiating between the two.
     pub fn on_mention(&mut self, id_to_mention: Option<UserId>) -> &mut Self {
         self.on_mention = id_to_mention.map(|id| id.to_string());
 
@@ -410,8 +415,8 @@ impl Configuration {
     /// use serenity::framework::StandardFramework;
     /// use serenity::model::id::UserId;
     ///
-    /// let framework = StandardFramework::new()
-    ///     .configure(|c| c.owners(vec![UserId(7), UserId(77)].into_iter().collect()));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.owners(vec![UserId::new(7), UserId::new(77)].into_iter().collect()));
     /// ```
     ///
     /// Create a HashSet beforehand:
@@ -423,10 +428,11 @@ impl Configuration {
     /// use serenity::model::id::UserId;
     ///
     /// let mut set = HashSet::new();
-    /// set.insert(UserId(7));
-    /// set.insert(UserId(77));
+    /// set.insert(UserId::new(7));
+    /// set.insert(UserId::new(77));
     ///
-    /// let framework = StandardFramework::new().configure(|c| c.owners(set));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.owners(set));
     /// ```
     pub fn owners(&mut self, user_ids: HashSet<UserId>) -> &mut Self {
         self.owners = user_ids;
@@ -434,15 +440,14 @@ impl Configuration {
         self
     }
 
-    /// Sets the prefix to respond to. A prefix can be a string slice of any
-    /// non-zero length.
+    /// Sets the prefix to respond to. A prefix can be a string slice of any non-zero length.
     ///
     /// **Note**: Defaults to "~".
     ///
     /// **Note**: Passing empty string `""` will set no prefix.
     ///
-    /// **Note**: This prefix will always be usable, even if there is a
-    /// [`Self::dynamic_prefix`] configured.
+    /// **Note**: This prefix will always be usable, even if there is a [`Self::dynamic_prefix`]
+    /// configured.
     ///
     /// # Examples
     ///
@@ -451,22 +456,22 @@ impl Configuration {
     /// ```rust,no_run
     /// use serenity::framework::StandardFramework;
     ///
-    /// let framework = StandardFramework::new().configure(|c| c.prefix("!"));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.prefix("!"));
     /// ```
-    pub fn prefix(&mut self, prefix: impl ToString) -> &mut Self {
-        let p = prefix.to_string();
+    pub fn prefix(&mut self, prefix: impl Into<String>) -> &mut Self {
+        let p = prefix.into();
         self.prefixes = if p.is_empty() { vec![] } else { vec![p] };
 
         self
     }
 
-    /// Sets the prefixes to respond to. Each can be a string slice of any
-    /// non-zero length.
+    /// Sets the prefixes to respond to. Each can be a string slice of any non-zero length.
     ///
     /// **Note**: Refer to [`Self::prefix`] for the default value.
     ///
-    /// **Note**: These prefixes will always be usable, even if there is a
-    /// [`Self::dynamic_prefix`] configured.
+    /// **Note**: These prefixes will always be usable, even if there is a [`Self::dynamic_prefix`]
+    /// configured.
     ///
     /// # Examples
     ///
@@ -475,14 +480,11 @@ impl Configuration {
     /// ```rust,no_run
     /// use serenity::framework::StandardFramework;
     ///
-    /// let framework = StandardFramework::new().configure(|c| c.prefixes(vec!["!", ">", "+"]));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.prefixes(vec!["!", ">", "+"]));
     /// ```
     #[inline]
-    pub fn prefixes<T, It>(&mut self, prefixes: It) -> &mut Self
-    where
-        T: ToString,
-        It: IntoIterator<Item = T>,
-    {
+    pub fn prefixes<T: ToString>(&mut self, prefixes: impl IntoIterator<Item = T>) -> &mut Self {
         self.prefixes =
             prefixes.into_iter().map(|p| p.to_string()).filter(|p| !p.is_empty()).collect();
 
@@ -514,7 +516,8 @@ impl Configuration {
     /// ```rust,no_run
     /// use serenity::framework::StandardFramework;
     ///
-    /// let framework = StandardFramework::new().configure(|c| c.delimiter(", "));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.delimiter(", "));
     /// ```
     pub fn delimiter<I: Into<Delimiter>>(&mut self, delimiter: I) -> &mut Self {
         self.delimiters.clear();
@@ -535,21 +538,21 @@ impl Configuration {
     /// ```rust,no_run
     /// use serenity::framework::StandardFramework;
     ///
-    /// let framework = StandardFramework::new().configure(|c| c.delimiters(vec![", ", " "]));
+    /// let framework = StandardFramework::new();
+    /// framework.configure(|c| c.delimiters(vec![", ", " "]));
     /// ```
-    pub fn delimiters<T, It>(&mut self, delimiters: It) -> &mut Self
-    where
-        T: Into<Delimiter>,
-        It: IntoIterator<Item = T>,
-    {
+    pub fn delimiters<T: Into<Delimiter>>(
+        &mut self,
+        delimiters: impl IntoIterator<Item = T>,
+    ) -> &mut Self {
         self.delimiters.clear();
         self.delimiters.extend(delimiters.into_iter().map(Into::into));
 
         self
     }
 
-    /// Whether the framework shouldn't care about the user's input if it's:
-    /// `~command`, `~Command`, or `~COMMAND`; `mayacommand`, `MayACommand`, `MAYACOMMAND`, et cetera.
+    /// Whether the framework shouldn't care about the user's input if it's: `~command`,
+    /// `~Command`, or `~COMMAND`; `mayacommand`, `MayACommand`, `MAYACOMMAND`, et cetera.
     ///
     /// Setting this to `true` will result in *all* prefixes and command names to be case
     /// insensitive.

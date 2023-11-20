@@ -3,8 +3,8 @@ name: CI
 on: [push, pull_request]
 
 env:
-  rust_min: 1.53.0
-  rust_nightly: nightly-2022-08-11
+  rust_min: 1.74.0
+  rust_nightly: nightly-2023-11-16
 
 jobs:
   test:
@@ -25,7 +25,6 @@ jobs:
           - no default features
           - no cache
           - no gateway
-          - time
           - unstable Discord API features
           - simd-json
 
@@ -44,8 +43,6 @@ jobs:
             features: default_no_backend rustls_backend simd_json
           - name: no gateway
             features: model http rustls_backend
-          - name: time
-            features: time
           - name: chrono
             features: chrono
           - name: unstable Discord API features
@@ -63,9 +60,9 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain
-        run: |
-          rustup install --profile minimal ${{ matrix.toolchain || 'stable' }}
-          rustup override set ${{ matrix.toolchain || 'stable' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain || 'stable' }}
 
       - name: Add problem matchers
         shell: bash
@@ -76,11 +73,11 @@ jobs:
 
       - name: Build all features
         if: matrix.features == ''
-        run: cargo build --all-features
+        run: cargo build --features full
 
       - name: Test all features
         if: matrix.features == ''
-        run: cargo test --all-features
+        run: cargo test --features full
 
       - name: Build some features
         if: matrix.features
@@ -99,22 +96,22 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain (${{ env.rust_nightly }})
-        run: |
-          rustup install --profile minimal ${{ env.rust_nightly }}
-          rustup override set ${{ env.rust_nightly }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_nightly }}
 
       - name: Add problem matchers
         shell: bash
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: Build all features
-        run: cargo build --all-features
+        run: cargo build --features full
 
       - name: Test all features
-        run: cargo test --all-features
+        run: cargo test --features full
 
   macOS:
     name: Test (macOS)
@@ -125,16 +122,14 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain
-        run: |
-          rustup install --profile minimal stable
-          rustup override set stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Add problem matchers
         shell: bash
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: Remove cargo build config
         run: rm .cargo/config.toml
@@ -148,50 +143,27 @@ jobs:
   MSRV:
     runs-on: ubuntu-latest
 
+    # We only run this job on the current branch as keeping MSRV the same is not important on next.
+    if: (github.event_name == 'push' && github.ref_name == 'current') ||
+        (github.event_name == 'pull_request' && github.base_ref == 'current') 
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
       - name: Install toolchain (${{ env.rust_min }})
-        run: |
-          rustup install --profile minimal ${{ env.rust_min }}
-          rustup override set ${{ env.rust_min }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_min }}
 
       - name: Add problem matchers
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
-
-      # dashmap 5.3+ MSRV is 1.59
-      - name: Pin dashmap to 5.2.0
-        run: cargo update -p dashmap --precise 5.2.0
-
-      # indexmap 1.9+ MSRV is 1.56
-      - name: Pin indexmap to 1.8.2
-        run: cargo update -p indexmap --precise 1.8.2
-
-      # time 0.3.10+ MSRV is 1.57
-      - name: Pin time to 0.3.9
-        run: |
-          # We have `time` 0.1 & 0.3 in the tree
-          latest_version=$(cargo search --limit 1 time | head -1 | cut -d'"' -f2)
-          cargo update -p time:$latest_version --precise 0.3.9
-
-      # once_cell 1.15.0+ MSRV is 1.56
-      - name: Pin once_cell to 1.14.0
-        run: cargo update -p once_cell --precise 1.14.0
-
-      # halfbrown 0.1.13+ requires hashbrown 0.12 (MSRV 1.56)
-      - name: Pin halfbrown to 0.1.12
-        run: cargo update -p halfbrown --precise 0.1.12
-
-      # value-trait 0.2.12+ MSRV is 1.59
-      - name: Pin value-trait to 0.2.10
-        run: cargo update -p value-trait --precise 0.2.10
+        uses: Swatinem/rust-cache@v2
 
       - name: Check
-        run: cargo check --all-features
+        run: cargo check --features full
 
   min_versions:
     name: Check minimal versions
@@ -202,15 +174,15 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain (${{ env.rust_nightly }})
-        run: |
-          rustup install --profile minimal ${{ env.rust_nightly }}
-          rustup override set ${{ env.rust_nightly }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_nightly }}
 
       - name: Add problem matchers
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: Check minimal versions
         run: |
@@ -226,15 +198,15 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain (${{ env.rust_nightly }})
-        run: |
-          rustup install --profile minimal ${{ env.rust_nightly }}
-          rustup override set ${{ env.rust_nightly }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_nightly }}
 
       - name: Add problem matchers
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: Build docs
         run: |
@@ -252,13 +224,13 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install toolchain
-        run: rustup install stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Add problem matchers
         run: echo "::add-matcher::.github/matchers/rust.json"
 
       - name: Cache
-        uses: Swatinem/rust-cache@v1
+        uses: Swatinem/rust-cache@v2
 
       - name: 'Check example 1'
         run: cargo check -p e01_basic_ping_bot
@@ -296,3 +268,5 @@ jobs:
         run: cargo check -p e17_message_components
       - name: 'Check example 18'
         run: cargo check -p e18_webhook
+      - name: 'Check example 19'
+        run: cargo check -p e19_interactions_endpoint

@@ -1,8 +1,7 @@
 //! A set of exports which can be helpful to use.
 //!
-//! Note that the `SerenityError` re-export is equivalent to
-//! [`serenity::Error`], although is re-exported as a separate name to remove
-//! likely ambiguity with other crate error enums.
+//! Note that the `SerenityError` re-export is equivalent to [`serenity::Error`], although is
+//! re-exported as a separate name to remove likely ambiguity with other crate error enums.
 //!
 //! # Examples
 //!
@@ -14,7 +13,6 @@
 //!
 //! [`serenity::Error`]: crate::Error
 
-#[cfg(feature = "tokio")]
 pub use tokio::sync::{Mutex, RwLock};
 #[cfg(feature = "client")]
 pub use typemap_rev::{TypeMap, TypeMapKey};
@@ -26,6 +24,8 @@ pub use crate::client::{Client, ClientError, EventHandler, RawEventHandler};
 pub use crate::error::Error as SerenityError;
 #[cfg(feature = "gateway")]
 pub use crate::gateway::GatewayError;
+#[cfg(feature = "http")]
+pub use crate::http::CacheHttp;
 #[cfg(feature = "http")]
 pub use crate::http::HttpError;
 pub use crate::model::mention::Mentionable;

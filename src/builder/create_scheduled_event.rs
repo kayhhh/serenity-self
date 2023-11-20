@@ -1,112 +1,151 @@
-use std::collections::HashMap;
-
-#[cfg(feature = "model")]
-use crate::http::Http;
-#[cfg(feature = "model")]
+#[cfg(feature = "http")]
+use super::Builder;
+use super::CreateAttachment;
+#[cfg(feature = "http")]
+use crate::http::CacheHttp;
+#[cfg(feature = "http")]
 use crate::internal::prelude::*;
-use crate::json::{json, Value};
-#[cfg(feature = "model")]
-use crate::model::channel::AttachmentType;
-use crate::model::guild::ScheduledEventType;
-use crate::model::id::ChannelId;
-use crate::model::Timestamp;
-#[cfg(feature = "model")]
-use crate::utils::encode_image;
+use crate::model::prelude::*;
 
-#[derive(Clone, Debug)]
-pub struct CreateScheduledEvent(pub HashMap<&'static str, Value>);
+/// [Discord docs](https://discord.com/developers/docs/resources/guild-scheduled-event#create-guild-scheduled-event)
+#[derive(Clone, Debug, Serialize)]
+#[must_use]
+pub struct CreateScheduledEvent<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_id: Option<ChannelId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity_metadata: Option<ScheduledEventMetadata>,
+    name: String,
+    privacy_level: ScheduledEventPrivacyLevel,
+    scheduled_start_time: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scheduled_end_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    entity_type: ScheduledEventType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image: Option<String>,
 
-impl CreateScheduledEvent {
-    /// Sets the channel id of the scheduled event. Required if the [`kind`] of the event is
-    /// [`StageInstance`] or [`Voice`].
-    ///
-    /// [`kind`]: CreateScheduledEvent::kind
-    /// [`StageInstance`]: ScheduledEventType::StageInstance
-    /// [`Voice`]: ScheduledEventType::Voice
-    pub fn channel_id<C: Into<ChannelId>>(&mut self, channel_id: C) -> &mut Self {
-        self.0.insert("channel_id", Value::from(channel_id.into().0));
+    #[serde(skip)]
+    audit_log_reason: Option<&'a str>,
+}
+
+impl<'a> CreateScheduledEvent<'a> {
+    /// Creates a builder with the provided kind, name, and start time, leaving all other fields
+    /// empty.
+    pub fn new(
+        kind: ScheduledEventType,
+        name: impl Into<String>,
+        scheduled_start_time: impl Into<Timestamp>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            entity_type: kind,
+            scheduled_start_time: scheduled_start_time.into().to_string(),
+
+            image: None,
+            channel_id: None,
+            description: None,
+            entity_metadata: None,
+            scheduled_end_time: None,
+
+            // Set the privacy level to `GUILD_ONLY`. As this is the only possible value of this
+            // field, it's onlyu used at event creation, and we don't even parse it into the
+            // `ScheduledEvent` struct.
+            privacy_level: ScheduledEventPrivacyLevel::GuildOnly,
+
+            audit_log_reason: None,
+        }
+    }
+
+    /// Sets the channel id of the scheduled event. Required if [`Self::kind`] is
+    /// [`ScheduledEventType::StageInstance`] or [`ScheduledEventType::Voice`].
+    pub fn channel_id<C: Into<ChannelId>>(mut self, channel_id: C) -> Self {
+        self.channel_id = Some(channel_id.into());
         self
     }
 
-    /// Sets the name of the scheduled event. Required to be set for event creation.
-    pub fn name<S: ToString>(&mut self, name: S) -> &mut Self {
-        self.0.insert("name", Value::from(name.to_string()));
+    /// Sets the name of the scheduled event, replacing the current value as set in [`Self::new`].
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = name.into();
         self
     }
 
     /// Sets the description of the scheduled event.
-    pub fn description<S: ToString>(&mut self, description: S) -> &mut Self {
-        self.0.insert("description", Value::from(description.to_string()));
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
-    /// Sets the start time of the scheduled event. Required to be set for event creation.
-    #[inline]
-    pub fn start_time<T: Into<Timestamp>>(&mut self, timestamp: T) -> &mut Self {
-        self._timestamp("scheduled_start_time", timestamp.into());
+    /// Sets the start time of the scheduled event, replacing the current value as set in
+    /// [`Self::new`].
+    pub fn start_time(mut self, timestamp: impl Into<Timestamp>) -> Self {
+        self.scheduled_start_time = timestamp.into().to_string();
         self
     }
 
-    /// Sets the end time of the scheduled event. Required if the [`kind`] of the event is
-    /// [`External`].
+    /// Sets the end time of the scheduled event. Required if [`Self::kind`] is
+    /// [`ScheduledEventType::External`].
+    pub fn end_time(mut self, timestamp: impl Into<Timestamp>) -> Self {
+        self.scheduled_end_time = Some(timestamp.into().to_string());
+        self
+    }
+
+    /// Sets the entity type of the scheduled event, replacing the current value as set in
+    /// [`Self::new`].
+    pub fn kind(mut self, kind: ScheduledEventType) -> Self {
+        self.entity_type = kind;
+        self
+    }
+
+    /// Sets the location of the scheduled event. Required to be set and non-empty if
+    /// [`Self::kind`] is [`ScheduledEventType::External`].
     ///
-    /// [`kind`]: CreateScheduledEvent::kind
     /// [`External`]: ScheduledEventType::External
-    #[inline]
-    pub fn end_time<T: Into<Timestamp>>(&mut self, timestamp: T) -> &mut Self {
-        self._timestamp("scheduled_end_time", timestamp.into());
-        self
-    }
-
-    fn _timestamp(&mut self, field: &'static str, timestamp: Timestamp) {
-        self.0.insert(field, Value::from(timestamp.to_string()));
-    }
-
-    /// Sets the entity type of the scheduled event. Required to be set for event creation.
-    pub fn kind(&mut self, kind: ScheduledEventType) -> &mut Self {
-        self.0.insert("entity_type", Value::from(kind.num()));
-        self
-    }
-
-    /// Sets the location of the scheduled event. Required to be set and non-empty if the
-    /// [`kind`] of the event is [`External`].
-    ///
-    /// [`kind`]: CreateScheduledEvent::kind
-    /// [`External`]: ScheduledEventType::External
-    pub fn location<S: ToString>(&mut self, location: S) -> &mut Self {
-        let obj = json!({
-            "location": location.to_string(),
+    pub fn location(mut self, location: impl Into<String>) -> Self {
+        self.entity_metadata = Some(ScheduledEventMetadata {
+            location: Some(location.into()),
         });
-        self.0.insert("entity_metadata", obj);
         self
     }
 
     /// Sets the cover image for the scheduled event.
-    ///
-    /// # Errors
-    ///
-    /// May error if the icon is a URL and the HTTP request fails, or if the image is a file
-    /// on a path that doesn't exist.
-    #[cfg(feature = "model")]
-    pub async fn image<'a>(
-        &mut self,
-        http: impl AsRef<Http>,
-        image: impl Into<AttachmentType<'a>>,
-    ) -> Result<&mut Self> {
-        let image_data = image.into().data(&http.as_ref().client).await?;
-        self.0.insert("image", Value::from(encode_image(&image_data)));
-        Ok(self)
+    pub fn image(mut self, image: &CreateAttachment) -> Self {
+        self.image = Some(image.to_base64());
+        self
+    }
+
+    /// Sets the request's audit log reason.
+    pub fn audit_log_reason(mut self, reason: &'a str) -> Self {
+        self.audit_log_reason = Some(reason);
+        self
     }
 }
 
-impl Default for CreateScheduledEvent {
-    /// Creates a builder with default values, setting the `privacy_level` to `GUILD_ONLY`. As this
-    /// is the only possible value of this field, it's only used at event creation, and we don't
-    /// even parse it into the `ScheduledEvent` struct.
-    fn default() -> Self {
-        let mut map = HashMap::new();
-        map.insert("privacy_level", Value::from(2));
+#[cfg(feature = "http")]
+#[async_trait::async_trait]
+impl<'a> Builder for CreateScheduledEvent<'a> {
+    type Context<'ctx> = GuildId;
+    type Built = ScheduledEvent;
 
-        CreateScheduledEvent(map)
+    /// Creates a new scheduled event in the guild with the data set, if any.
+    ///
+    /// **Note**: Requires the [Create Events] permission.
+    ///
+    /// # Errors
+    ///
+    /// If the `cache` is enabled, returns a [`ModelError::InvalidPermissions`] if the current user
+    /// lacks permission. Otherwise returns [`Error::Http`], as well as if invalid data is given.
+    ///
+    /// [Create Events]: Permissions::CREATE_EVENTS
+    async fn execute(
+        self,
+        cache_http: impl CacheHttp,
+        ctx: Self::Context<'_>,
+    ) -> Result<Self::Built> {
+        #[cfg(feature = "cache")]
+        crate::utils::user_has_guild_perms(&cache_http, ctx, Permissions::CREATE_EVENTS)?;
+
+        cache_http.http().create_scheduled_event(ctx, &self, self.audit_log_reason).await
     }
 }

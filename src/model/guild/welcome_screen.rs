@@ -6,6 +6,7 @@ use crate::model::id::{ChannelId, EmojiId};
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/guild#welcome-screen-object).
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
 pub struct GuildWelcomeScreen {
     /// The server description shown in the welcome screen.
     pub description: Option<String>,
@@ -29,6 +30,7 @@ pub struct GuildWelcomeChannel {
     pub emoji: Option<GuildWelcomeChannelEmoji>,
 }
 
+// Manual impl needed to deserialize emoji_id and emoji_name into a single GuildWelcomeChannelEmoji
 impl<'de> Deserialize<'de> for GuildWelcomeChannel {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
