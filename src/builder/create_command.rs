@@ -319,7 +319,7 @@ pub struct CreateCommand {
 }
 
 impl CreateCommand {
-    /// Creates a new builder with the given name and description, leaving all other fields empty.
+    /// Creates a new builder with the given name, leaving all other fields empty.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             kind: None,
@@ -379,7 +379,7 @@ impl CreateCommand {
         self
     }
 
-    /// Specifies the description of the application command, replacing the current value as set in
+    /// Specifies the description of the application command.
     /// [`Self::new`].
     ///
     /// **Note**: Must be between 1 and 100 characters long.
