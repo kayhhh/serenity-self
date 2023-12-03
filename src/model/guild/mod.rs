@@ -2386,12 +2386,14 @@ impl Guild {
     /// Obtain a reference to a [`Role`] by its name.
     ///
     /// ```rust,no_run
-    /// # use serenity::model::prelude::*;
-    /// # use serenity::prelude::*;
-    /// # struct Handler;
+    /// # #[cfg(all(feature = "cache", feature = "client"))]
+    /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    /// use serenity::model::prelude::*;
+    /// use serenity::prelude::*;
+    ///
+    /// struct Handler;
     ///
     /// #[serenity::async_trait]
-    /// #[cfg(all(feature = "cache", feature = "client"))]
     /// impl EventHandler for Handler {
     ///     async fn message(&self, ctx: Context, msg: Message) {
     ///         if let Some(guild_id) = msg.guild_id {
@@ -2403,6 +2405,13 @@ impl Guild {
     ///         }
     ///     }
     /// }
+    ///
+    /// let mut client =
+    ///     Client::builder("token", GatewayIntents::default()).event_handler(Handler).await?;
+    ///
+    /// client.start().await?;
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn role_by_name(&self, role_name: &str) -> Option<&Role> {

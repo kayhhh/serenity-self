@@ -41,7 +41,7 @@ impl<'a> CreateSticker<'a> {
         self
     }
 
-    /// Set the description of the sticker.
+    /// Set the description of the sticker, replacing the current value as set in [`Self::new`].
     ///
     /// **Note**: Must be empty or 2-100 characters.
     pub fn description(mut self, description: impl Into<String>) -> Self {
@@ -49,7 +49,8 @@ impl<'a> CreateSticker<'a> {
         self
     }
 
-    /// The Discord name of a unicode emoji representing the sticker's expression.
+    /// The Discord name of a unicode emoji representing the sticker's expression. Replaces the
+    /// current value as set in [`Self::new`].
     ///
     /// **Note**: Max 200 characters long.
     pub fn tags(mut self, tags: impl Into<String>) -> Self {
@@ -100,8 +101,7 @@ impl<'a> Builder for CreateSticker<'a> {
             Permissions::CREATE_GUILD_EXPRESSIONS,
         )?;
 
-        let map = vec![("name", self.name), ("tags", self.tags), ("description", self.description)];
-
+        let map = [("name", self.name), ("tags", self.tags), ("description", self.description)];
         cache_http.http().create_sticker(ctx, map, self.file, self.audit_log_reason).await
     }
 }
