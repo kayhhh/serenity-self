@@ -1,6 +1,7 @@
 # IDE directories and folders
 .vscode/
 .idea/
+.vs/
 
 # Target directory
 target/
