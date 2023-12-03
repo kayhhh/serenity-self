@@ -1,5 +1,5 @@
 [package]
-authors = ["Alex M. M. <acdenissk69@gmail.com>"]
+authors = ["nshout", "Alex M. M. <acdenissk69@gmail.com>"]
 description = "A Rust library for the Discord API."
 documentation = "https://docs.rs/serenity"
 homepage = "https://github.com/serenity-rs/serenity"
@@ -8,7 +8,7 @@ license = "ISC"
 name = "serenity"
 readme = "README.md"
 repository = "https://github.com/serenity-rs/serenity.git"
-version = "0.12.0-rc2"
+version = "0.13.0-alpha"
 edition = "2021"
 rust-version = "1.74"
 include = ["src/**/*", "LICENSE.md", "README.md", "CHANGELOG.md", "build.rs"]
