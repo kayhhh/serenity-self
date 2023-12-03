@@ -198,7 +198,7 @@ fn update_cache_with_event(
             }
         },
         Event::GuildEmojisUpdate(mut event) => {
-            update_cache(&ctx, &mut event);
+            update_cache!(cache, event);
 
             FullEvent::GuildEmojisUpdate {
                 guild_id: event.guild_id,
