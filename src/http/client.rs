@@ -159,9 +159,9 @@ fn parse_token(token: impl AsRef<str>) -> String {
     let token = token.as_ref().trim();
 
     if token.starts_with("Bot ") || token.starts_with("Bearer ") {
-        token.to_string()
+        panic!("Bot tokens are not supported in Serenity-self");
     } else {
-        format!("Bot {token}")
+        token.to_string()
     }
 }
 
