@@ -1,10 +1,48 @@
-//! The gateway module contains the pieces - responsible for maintaining a
+//! The gateway module contains the pieces - primarily the `Shard` - responsible for maintaining a
 //! WebSocket connection with Discord.
 //!
-//! An interface for the lower-level receiver and sender. It provides what can otherwise
-//! be thought of as "sugar methods".
+//! A shard is an interface for the lower-level receiver and sender. It provides what can otherwise
+//! be thought of as "sugar methods". A shard represents a single connection to Discord. You can
+//! make use of a method named "sharding" to have multiple shards, potentially offloading some
+//! server load to another server(s).
+//!
+//! # Sharding
+//!
+//! Sharding is a method to split portions of bots into separate processes. This is an enforced
+//! strategy by Discord once a bot reaches a certain number of guilds (2500). Once this number is
+//! reached, a bot must be sharded in a way that only 2500 guilds maximum may be allocated per
+//! shard.
+//!
+//! The "recommended" number of guilds per shard is _around_ 1000. Sharding can be useful for
+//! splitting processes across separate servers. Often you may want some or all shards to be in the
+//! same process, allowing for a shared State. This is possible through this library.
+//!
+//! See [Discord's documentation][docs] for more information.
+//!
+//! If you are not using a bot account or do not require sharding - such as for a small bot - then
+//! use [`Client::start`].
+//!
+//! There are a few methods of sharding available:
+//! - [`Client::start_autosharded`]: retrieves the number of shards Discord recommends using from
+//! the API, and then automatically starts that number of shards.
+//! - [`Client::start_shard`]: starts a single shard for use in the instance, handled by the
+//! instance of the Client. Use this if you only want 1 shard handled by this instance.
+//! - [`Client::start_shards`]: starts all shards in this instance. This is best for when you want
+//! a completely shared State.
+//! - [`Client::start_shard_range`]: start a range of shards within this instance. This should be
+//! used when you, for example, want to split 10 shards across 3 instances.
+//!
+//! [`Client`]: crate::Client
+//! [`Client::start`]: crate::Client::start
+//! [`Client::start_autosharded`]: crate::Client::start_autosharded
+//! [`Client::start_shard`]: crate::Client::start_shard
+//! [`Client::start_shard_range`]: crate::Client::start_shard_range
+//! [`Client::start_shards`]: crate::Client::start_shards
+//! [docs]: https://discordapp.com/developers/docs/topics/gateway#sharding
 
+mod bridge;
 mod error;
+mod shard;
 mod ws;
 
 use std::fmt;
@@ -13,7 +51,9 @@ use std::fmt;
 use reqwest::IntoUrl;
 use reqwest::Url;
 
+pub use self::bridge::*;
 pub use self::error::Error as GatewayError;
+pub use self::shard::Shard;
 pub use self::ws::WsClient;
 #[cfg(feature = "http")]
 use crate::internal::prelude::*;
@@ -129,20 +169,23 @@ impl From<Activity> for ActivityData {
     }
 }
 
+/// Indicates the current connection stage of a [`Shard`].
+///
+/// This can be useful for knowing which shards are currently "down"/"up".
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum ConnectionStage {
-    /// Indicator that it is normally connected and is not in, e.g., a resume phase.
+    /// Indicator that the [`Shard`] is normally connected and is not in, e.g., a resume phase.
     Connected,
-    /// Indicator that it is connecting and is in, e.g., a resume phase.
+    /// Indicator that the [`Shard`] is connecting and is in, e.g., a resume phase.
     Connecting,
-    /// Indicator that it is fully disconnected and is not in a reconnecting phase.
+    /// Indicator that the [`Shard`] is fully disconnected and is not in a reconnecting phase.
     Disconnected,
-    /// Indicator that it is currently initiating a handshake.
+    /// Indicator that the [`Shard`] is currently initiating a handshake.
     Handshake,
-    /// Indicator that it has sent an IDENTIFY packet and is awaiting a READY packet.
+    /// Indicator that the [`Shard`] has sent an IDENTIFY packet and is awaiting a READY packet.
     Identifying,
-    /// Indicator that it has sent a RESUME packet and is awaiting a RESUMED packet.
+    /// Indicator that the [`Shard`] has sent a RESUME packet and is awaiting a RESUMED packet.
     Resuming,
 }
 
@@ -164,7 +207,7 @@ impl ConnectionStage {
     /// ```rust
     /// use serenity::gateway::ConnectionStage;
     ///
-    /// assert!(ConnectionStage::Identifying.is_connecting());
+    /// assert!(ConnectionStage::Identifying.is_conn ecting());
     /// ```
     ///
     /// Assert that [`ConnectionStage::Connected`] is _not_ a connecting stage:
@@ -194,6 +237,14 @@ impl fmt::Display for ConnectionStage {
     }
 }
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ShardAction {
+    Heartbeat,
+    Identify,
+    Reconnect(ReconnectType),
+}
+
 /// The type of reconnection that should be performed.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -207,7 +258,7 @@ pub enum ReconnectType {
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#request-guild-members).
 #[derive(Clone, Debug)]
 pub enum ChunkGuildFilter {
-    /// Returns all members of the guilds specified.
+    /// Returns all members of the guilds specified. Requires GUILD_MEMBERS intent.
     None,
     /// A common username prefix filter for the members returned.
     ///

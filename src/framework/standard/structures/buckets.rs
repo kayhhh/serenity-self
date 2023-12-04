@@ -504,7 +504,7 @@ impl BucketBuilder {
     ///
     /// framework.configure(Configuration::new().prefix("~"));
     ///
-    /// let mut client = Client::builder(&token)
+    /// let mut client = Client::builder(&token, GatewayIntents::default())
     /// .framework(framework)
     /// .await?;
     ///

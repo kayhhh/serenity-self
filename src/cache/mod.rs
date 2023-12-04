@@ -1,3 +1,5 @@
+//! A cache containing data received from [`Shard`]s.
+//!
 //! Using the cache allows to avoid REST API requests via the [`http`] module where possible.
 //! Issuing too many requests will lead to ratelimits.
 //!
@@ -18,9 +20,10 @@
 //! is "definitely no". If you do not care about RAM and want your bot to be able to access data
 //! while needing to hit the REST API as little as possible, then the answer is "yes".
 //!
+//! [`Shard`]: crate::gateway::Shard
 //! [`http`]: crate::http
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 #[cfg(feature = "temp_cache")]
 use std::sync::Arc;
@@ -119,6 +122,16 @@ pub type GuildChannelsRef<'a> = MappedGuildRef<'a, HashMap<ChannelId, GuildChann
 pub type ChannelMessagesRef<'a> = CacheRef<'a, ChannelId, HashMap<MessageId, Message>>;
 pub type MessageRef<'a> = CacheRef<'a, ChannelId, Message, HashMap<MessageId, Message>>;
 
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Debug)]
+pub(crate) struct CachedShardData {
+    pub total: u32,
+    pub connected: HashSet<ShardId>,
+    pub has_sent_shards_ready: bool,
+}
+
+/// A cache containing data received from [`Shard`]s.
+///
 /// Using the cache allows to avoid REST API requests via the [`http`] module where possible.
 /// Issuing too many requests will lead to ratelimits.
 ///
@@ -131,6 +144,9 @@ pub type MessageRef<'a> = CacheRef<'a, ChannelId, Message, HashMap<MessageId, Me
 /// - presences: [`PresenceUpdateEvent`], [`ReadyEvent`]
 /// - messages: [`MessageCreateEvent`]
 ///
+/// The documentation of each event contains the required gateway intents.
+///
+/// [`Shard`]: crate::gateway::Shard
 /// [`http`]: crate::http
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Debug)]
@@ -201,6 +217,8 @@ pub struct Cache {
 
     // Miscellanous fixed-size data
     // ---
+    /// Information about running shards
+    pub(crate) shard_data: RwLock<CachedShardData>,
     /// The current user "logged in" and for which events are being received for.
     ///
     /// The current user contains information that a regular [`User`] does not, such as whether it
@@ -262,6 +280,11 @@ impl Cache {
             messages: DashMap::default(),
             message_queue: DashMap::default(),
 
+            shard_data: RwLock::new(CachedShardData {
+                total: 1,
+                connected: HashSet::new(),
+                has_sent_shards_ready: false,
+            }),
             user: RwLock::new(CurrentUser::default()),
             settings: RwLock::new(settings),
         }
@@ -272,6 +295,9 @@ impl Cache {
     /// The important detail to note here is that this is the number of _member_s that have not had
     /// data received. A single [`User`] may have multiple associated member objects that have not
     /// been received.
+    ///
+    /// This can be used in combination with [`Shard::chunk_guild`], and can be used to determine
+    /// how many members have not yet been received.
     ///
     /// ```rust,no_run
     /// # use serenity::model::prelude::*;
@@ -286,6 +312,8 @@ impl Cache {
     ///     }
     /// }
     /// ```
+    ///
+    /// [`Shard::chunk_guild`]: crate::gateway::Shard::chunk_guild
     pub fn unknown_members(&self) -> u64 {
         let mut total = 0;
 
@@ -303,6 +331,10 @@ impl Cache {
     }
 
     /// Fetches a vector of all [`Guild`]s' Ids that are stored in the cache.
+    ///
+    /// Note that if you are utilizing multiple [`Shard`]s, then the guilds retrieved over all
+    /// shards are included in this count -- not just the current [`Context`]'s shard, if accessing
+    /// from one.
     ///
     /// # Examples
     ///
@@ -325,6 +357,7 @@ impl Cache {
     /// ```
     ///
     /// [`Context`]: crate::client::Context
+    /// [`Shard`]: crate::gateway::Shard
     pub fn guilds(&self) -> Vec<GuildId> {
         let unavailable_guilds = self.unavailable_guilds();
 
@@ -502,6 +535,12 @@ impl Cache {
     /// Returns the number of guild channels in the cache.
     pub fn guild_channel_count(&self) -> usize {
         self.channels.len()
+    }
+
+    /// Returns the number of shards.
+    #[inline]
+    pub fn shard_count(&self) -> u32 {
+        self.shard_data.read().total
     }
 
     /// Retrieves a [`Channel`]'s message from the cache based on the channel's and message's given

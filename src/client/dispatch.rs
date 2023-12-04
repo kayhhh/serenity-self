@@ -42,7 +42,6 @@ macro_rules! update_cache {
     ($cache:ident, $event:ident) => {};
 }
 
-#[allow(unused)]
 pub(crate) fn dispatch_model(
     event: Event,
     context: &Context,
@@ -88,12 +87,11 @@ pub(crate) fn dispatch_model(
 
 /// Updates the cache with the incoming event data and builds the full event data out of it.
 ///
-/// Can return a secondary [`FullEvent`] for "virtual" events like [`FullEvent::CacheReady`]
-/// Secondary events are traditionally dispatched first.
+/// Can return a secondary [`FullEvent`] for "virtual" events like [`FullEvent::CacheReady`] or
+/// [`FullEvent::ShardsReady`]. Secondary events are traditionally dispatched first.
 ///
 /// Can return `None` if an event is unknown.
 #[cfg_attr(not(feature = "cache"), allow(unused_mut))]
-#[allow(unused)]
 fn update_cache_with_event(
     #[cfg(feature = "cache")] cache: &Cache,
     event: Event,
@@ -346,6 +344,20 @@ fn update_cache_with_event(
         },
         Event::Ready(mut event) => {
             update_cache!(cache, event);
+
+            #[cfg(feature = "cache")]
+            {
+                let mut shards = cache.shard_data.write();
+                if shards.connected.len() as u32 == shards.total && !shards.has_sent_shards_ready {
+                    shards.has_sent_shards_ready = true;
+                    let total = shards.total;
+                    drop(shards);
+
+                    extra_event = Some(FullEvent::ShardsReady {
+                        total_shards: total,
+                    });
+                }
+            }
 
             FullEvent::Ready {
                 data_about_bot: event.ready,

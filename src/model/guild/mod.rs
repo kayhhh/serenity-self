@@ -50,8 +50,12 @@ use crate::builder::{
 };
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::cache::Cache;
+#[cfg(feature = "collector")]
+use crate::collector::{MessageCollector, ReactionCollector};
 #[cfg(feature = "model")]
 use crate::constants::LARGE_THRESHOLD;
+#[cfg(feature = "collector")]
+use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, UserPagination};
 #[cfg(feature = "model")]
@@ -264,6 +268,8 @@ pub struct Guild {
     /// All active threads in this guild that current user has permission to view.
     pub threads: Vec<GuildChannel>,
     /// A mapping of [`User`]s' Ids to their current presences.
+    ///
+    /// **Note**: This will be empty unless the "guild presences" privileged intent is enabled.
     #[serde(with = "presences")]
     pub presences: HashMap<UserId, Presence>,
     /// The stage instances in this guild.
@@ -607,7 +613,8 @@ impl Guild {
 
     /// Creates a guild with the data provided.
     ///
-    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received.
+    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received
+    /// over a [`Shard`].
     ///
     /// **Note**: This endpoint is usually only available for user accounts. Refer to Discord's
     /// information for the endpoint [here][whitelist] for more information. If you require this as
@@ -627,6 +634,7 @@ impl Guild {
     ///
     /// Returns [`Error::Http`] if the current user cannot create a Guild.
     ///
+    /// [`Shard`]: crate::gateway::Shard
     /// [whitelist]: https://discord.com/developers/docs/resources/guild#create-guild
     pub async fn create(
         http: impl AsRef<Http>,
@@ -2219,6 +2227,45 @@ impl Guild {
         self.id.scheduled_event_users_optioned(http, event_id, limit, target, with_member).await
     }
 
+    /// Returns the Id of the shard associated with the guild.
+    ///
+    /// When the cache is enabled this will automatically retrieve the total number of shards.
+    ///
+    /// **Note**: When the cache is enabled, this function unlocks the cache to retrieve the total
+    /// number of shards in use. If you already have the total, consider using [`utils::shard_id`].
+    ///
+    /// [`utils::shard_id`]: crate::utils::shard_id
+    #[cfg(all(feature = "cache", feature = "utils"))]
+    #[inline]
+    pub fn shard_id(&self, cache: impl AsRef<Cache>) -> u32 {
+        self.id.shard_id(&cache)
+    }
+
+    /// Returns the Id of the shard associated with the guild.
+    ///
+    /// When the cache is enabled this will automatically retrieve the total number of shards.
+    ///
+    /// When the cache is not enabled, the total number of shards being used will need to be
+    /// passed.
+    ///
+    /// # Examples
+    ///
+    /// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using 17 shards:
+    ///
+    /// ```rust,ignore
+    /// use serenity::utils;
+    ///
+    /// // assumes a `guild` has already been bound
+    ///
+    /// assert_eq!(guild.shard_id(17), 7);
+    /// ```
+    #[cfg(all(feature = "utils", not(feature = "cache")))]
+    #[inline]
+    #[must_use]
+    pub fn shard_id(&self, shard_count: u32) -> u32 {
+        self.id.shard_id(shard_count)
+    }
+
     /// Returns the formatted URL of the guild's splash image, if one exists.
     #[must_use]
     pub fn splash_url(&self) -> Option<String> {
@@ -2339,14 +2386,12 @@ impl Guild {
     /// Obtain a reference to a [`Role`] by its name.
     ///
     /// ```rust,no_run
-    /// # #[cfg(all(feature = "cache", feature = "client"))]
-    /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// use serenity::model::prelude::*;
-    /// use serenity::prelude::*;
-    ///
-    /// struct Handler;
+    /// # use serenity::model::prelude::*;
+    /// # use serenity::prelude::*;
+    /// # struct Handler;
     ///
     /// #[serenity::async_trait]
+    /// #[cfg(all(feature = "cache", feature = "client"))]
     /// impl EventHandler for Handler {
     ///     async fn message(&self, ctx: Context, msg: Message) {
     ///         if let Some(guild_id) = msg.guild_id {
@@ -2358,17 +2403,39 @@ impl Guild {
     ///         }
     ///     }
     /// }
-    ///
-    /// let mut client =
-    ///     Client::builder("token").event_handler(Handler).await?;
-    ///
-    /// client.start().await?;
-    /// # Ok(())
-    /// # }
     /// ```
     #[must_use]
     pub fn role_by_name(&self, role_name: &str) -> Option<&Role> {
         self.roles.values().find(|role| role_name == role.name)
+    }
+
+    /// Returns a builder which can be awaited to obtain a message or stream of messages in this
+    /// guild.
+    #[cfg(feature = "collector")]
+    pub fn await_reply(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
+        MessageCollector::new(shard_messenger).guild_id(self.id)
+    }
+
+    /// Same as [`Self::await_reply`].
+    #[cfg(feature = "collector")]
+    pub fn await_replies(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
+        self.await_reply(shard_messenger)
+    }
+
+    /// Returns a builder which can be awaited to obtain a message or stream of reactions sent in
+    /// this guild.
+    #[cfg(feature = "collector")]
+    pub fn await_reaction(&self, shard_messenger: impl AsRef<ShardMessenger>) -> ReactionCollector {
+        ReactionCollector::new(shard_messenger).guild_id(self.id)
+    }
+
+    /// Same as [`Self::await_reaction`].
+    #[cfg(feature = "collector")]
+    pub fn await_reactions(
+        &self,
+        shard_messenger: impl AsRef<ShardMessenger>,
+    ) -> ReactionCollector {
+        self.await_reaction(shard_messenger)
     }
 
     /// Gets the guild active threads.

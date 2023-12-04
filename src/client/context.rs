@@ -7,15 +7,24 @@ use typemap_rev::TypeMap;
 #[cfg(feature = "cache")]
 pub use crate::cache::Cache;
 use crate::gateway::ActivityData;
+#[cfg(feature = "gateway")]
+use crate::gateway::{ShardMessenger, ShardRunner};
 use crate::http::Http;
 use crate::model::prelude::*;
 
 /// The context is a general utility struct provided on event dispatches, which helps with dealing
-/// with the current "context" of the event dispatch.
+/// with the current "context" of the event dispatch. The context also acts as a general high-level
+/// interface over the associated [`Shard`] which received the event, or the low-level [`http`]
+/// module.
+///
+/// The context contains "shortcuts", like for interacting with the shard. Methods like
+/// [`Self::set_activity`] will unlock the shard and perform an update for you to save a bit of
+/// work.
 ///
 /// A context will only live for the event it was dispatched for. After the event handler finished,
 /// it is destroyed and will not be re-used.
 ///
+/// [`Shard`]: crate::gateway::Shard
 /// [`http`]: crate::http
 #[derive(Clone)]
 pub struct Context {
@@ -23,6 +32,10 @@ pub struct Context {
     ///
     /// [`Client::data`]: super::Client::data
     pub data: Arc<RwLock<TypeMap>>,
+    /// The messenger to communicate with the shard runner.
+    pub shard: ShardMessenger,
+    /// The ID of the shard this context is related to.
+    pub shard_id: ShardId,
     pub http: Arc<Http>,
     #[cfg(feature = "cache")]
     pub cache: Arc<Cache>,
@@ -32,6 +45,8 @@ pub struct Context {
 impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Context")
+            .field("shard", &self.shard)
+            .field("shard_id", &self.shard_id)
             .finish_non_exhaustive()
     }
 }
@@ -39,13 +54,16 @@ impl fmt::Debug for Context {
 impl Context {
     /// Create a new Context to be passed to an event handler.
     #[cfg(feature = "gateway")]
-    #[allow(unused)]
     pub(crate) fn new(
         data: Arc<RwLock<TypeMap>>,
+        runner: &ShardRunner,
+        shard_id: ShardId,
         http: Arc<Http>,
         #[cfg(feature = "cache")] cache: Arc<Cache>,
     ) -> Context {
         Context {
+            shard: ShardMessenger::new(runner),
+            shard_id,
             data,
             http,
             #[cfg(feature = "cache")]
@@ -54,8 +72,9 @@ impl Context {
     }
 
     #[cfg(all(not(feature = "cache"), not(feature = "gateway")))]
-    pub fn easy(data: Arc<RwLock<TypeMap>>, http: Arc<Http>) -> Context {
+    pub fn easy(data: Arc<RwLock<TypeMap>>, shard_id: u32, http: Arc<Http>) -> Context {
         Context {
+            shard_id,
             data,
             http,
         }
@@ -65,7 +84,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Set the current user to being online:
+    /// Set the current user to being online on the shard:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -85,17 +104,16 @@ impl Context {
     ///
     /// [`Online`]: OnlineStatus::Online
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn online(&self) {
-        self.online();
+        self.shard.set_status(OnlineStatus::Online);
     }
 
     /// Sets the current user as being [`Idle`]. This maintains the current activity.
     ///
     /// # Examples
     ///
-    /// Set the current user to being idle:
+    /// Set the current user to being idle on the shard:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -115,17 +133,16 @@ impl Context {
     ///
     /// [`Idle`]: OnlineStatus::Idle
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn idle(&self) {
-        self.idle();
+        self.shard.set_status(OnlineStatus::Idle);
     }
 
     /// Sets the current user as being [`DoNotDisturb`]. This maintains the current activity.
     ///
     /// # Examples
     ///
-    /// Set the current user to being Do Not Disturb:
+    /// Set the current user to being Do Not Disturb on the shard:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -145,17 +162,16 @@ impl Context {
     ///
     /// [`DoNotDisturb`]: OnlineStatus::DoNotDisturb
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn dnd(&self) {
-        self.dnd();
+        self.shard.set_status(OnlineStatus::DoNotDisturb);
     }
 
     /// Sets the current user as being [`Invisible`]. This maintains the current activity.
     ///
     /// # Examples
     ///
-    /// Set the current user to being invisible:
+    /// Set the current user to being invisible on the shard:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -175,10 +191,9 @@ impl Context {
     ///
     /// [`Invisible`]: OnlineStatus::Invisible
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn invisible(&self) {
-        self.invisible();
+        self.shard.set_status(OnlineStatus::Invisible);
     }
 
     /// "Resets" the current user's presence, by setting the activity to [`None`] and the online
@@ -188,7 +203,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Reset the current user's presence:
+    /// Reset the current user's presence on the shard:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -211,7 +226,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn reset_presence(&self) {
-        self.online();
+        self.shard.set_presence(None, OnlineStatus::Online);
     }
 
     /// Sets the current activity.
@@ -239,10 +254,9 @@ impl Context {
     /// }
     /// ```
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn set_activity(&self, activity: Option<ActivityData>) {
-        self.set_activity(activity);
+        self.shard.set_activity(activity);
     }
 
     /// Sets the current user's presence, providing all fields to be passed.
@@ -290,10 +304,9 @@ impl Context {
     /// [`DoNotDisturb`]: OnlineStatus::DoNotDisturb
     /// [`Idle`]: OnlineStatus::Idle
     #[cfg(feature = "gateway")]
-    #[allow(unconditional_recursion)]
     #[inline]
     pub fn set_presence(&self, activity: Option<ActivityData>, status: OnlineStatus) {
-        self.set_presence(activity, status);
+        self.shard.set_presence(activity, status);
     }
 }
 
@@ -340,5 +353,12 @@ impl AsRef<Arc<Cache>> for Context {
 impl AsRef<Cache> for Cache {
     fn as_ref(&self) -> &Cache {
         self
+    }
+}
+
+#[cfg(feature = "gateway")]
+impl AsRef<ShardMessenger> for Context {
+    fn as_ref(&self) -> &ShardMessenger {
+        &self.shard
     }
 }

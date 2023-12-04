@@ -1,5 +1,5 @@
 //! The Client contains information about a single bot's token, as well as event handlers.
-//! Dispatching events to configured handlers and starting the connections are handled
+//! Dispatching events to configured handlers and starting the shards' connections are handled
 //! directly via the client. In addition, the `http` module and `Cache` are also automatically
 //! handled by the Client module for you.
 //!
@@ -22,17 +22,24 @@ mod error;
 mod event_handler;
 
 use std::future::IntoFuture;
+use std::ops::Range;
 use std::sync::Arc;
+#[cfg(feature = "framework")]
+use std::sync::OnceLock;
 
+use futures::channel::mpsc::UnboundedReceiver as Receiver;
 use futures::future::BoxFuture;
+use futures::StreamExt as _;
 use tokio::sync::{Mutex, RwLock};
-use tracing::instrument;
+use tracing::{debug, error, info, instrument};
 use typemap_rev::{TypeMap, TypeMapKey};
 
 pub use self::context::Context;
 pub use self::error::Error as ClientError;
 #[cfg(feature = "gateway")]
 pub use self::event_handler::{EventHandler, FullEvent, RawEventHandler};
+#[cfg(feature = "gateway")]
+use super::gateway::GatewayError;
 #[cfg(feature = "cache")]
 pub use crate::cache::Cache;
 #[cfg(feature = "cache")]
@@ -42,6 +49,8 @@ use crate::framework::Framework;
 #[cfg(feature = "voice")]
 use crate::gateway::VoiceGatewayManager;
 use crate::gateway::{ActivityData, PresenceData};
+#[cfg(feature = "gateway")]
+use crate::gateway::{ShardManager, ShardManagerOptions};
 use crate::http::Http;
 use crate::internal::prelude::*;
 use crate::model::id::ApplicationId;
@@ -290,6 +299,8 @@ impl IntoFuture for ClientBuilder {
         #[cfg(feature = "framework")]
         let framework = self.framework;
         let event_handlers = self.event_handlers;
+        let raw_event_handlers = self.raw_event_handlers;
+        let presence = self.presence;
 
         let mut http = self.http;
 
@@ -320,8 +331,30 @@ impl IntoFuture for ClientBuilder {
                 },
             }));
 
+            #[cfg(feature = "framework")]
+            let framework_cell = Arc::new(OnceLock::new());
+            let (shard_manager, shard_manager_ret_value) = ShardManager::new(ShardManagerOptions {
+                data: Arc::clone(&data),
+                event_handlers,
+                raw_event_handlers,
+                #[cfg(feature = "framework")]
+                framework: Arc::clone(&framework_cell),
+                shard_index: 0,
+                shard_init: 0,
+                shard_total: 0,
+                #[cfg(feature = "voice")]
+                voice_manager: voice_manager.as_ref().map(Arc::clone),
+                ws_url: Arc::clone(&ws_url),
+                #[cfg(feature = "cache")]
+                cache: Arc::clone(&cache),
+                http: Arc::clone(&http),
+                presence: Some(presence),
+            });
+
             let client = Client {
                 data,
+                shard_manager,
+                shard_manager_return_value: shard_manager_ret_value,
                 #[cfg(feature = "voice")]
                 voice_manager,
                 ws_url,
@@ -332,6 +365,9 @@ impl IntoFuture for ClientBuilder {
             #[cfg(feature = "framework")]
             if let Some(mut framework) = framework {
                 framework.init(&client).await;
+                if let Err(_existing) = framework_cell.set(framework.into()) {
+                    tracing::warn!("overwrote existing contents of framework OnceLock");
+                }
             }
             Ok(client)
         })
@@ -339,7 +375,8 @@ impl IntoFuture for ClientBuilder {
 }
 
 /// The Client is the way to be able to start sending authenticated requests over the REST API, as
-/// well as initializing a WebSocket connection.
+/// well as initializing a WebSocket connection through [`Shard`]s. Refer to the [documentation on
+/// using sharding][sharding docs] for more information.
 ///
 /// # Event Handlers
 ///
@@ -372,14 +409,16 @@ impl IntoFuture for ClientBuilder {
 ///
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut client =
-///     Client::builder("my token here").event_handler(Handler).await?;
+///     Client::builder("my token here", GatewayIntents::default()).event_handler(Handler).await?;
 ///
 /// client.start().await?;
 /// # Ok(())
 /// # }
 /// ```
 ///
+/// [`Shard`]: crate::gateway::Shard
 /// [`Event::MessageCreate`]: crate::model::event::Event::MessageCreate
+/// [sharding docs]: crate::gateway#sharding
 #[cfg(feature = "gateway")]
 pub struct Client {
     /// A TypeMap which requires types to be Send + Sync. This is a map that can be safely shared
@@ -454,7 +493,7 @@ pub struct Client {
     ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let mut client = Client::builder(&token).event_handler(Handler).await?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).event_handler(Handler).await?;
     /// {
     ///     let mut data = client.data.write().await;
     ///     data.insert::<MessageEventCounter>(HashMap::default());
@@ -473,17 +512,73 @@ pub struct Client {
     /// [`Event::MessageUpdate`]: crate::model::event::Event::MessageUpdate
     /// [example 05]: https://github.com/serenity-rs/serenity/tree/current/examples/e05_command_framework
     pub data: Arc<RwLock<TypeMap>>,
+    /// A HashMap of all shards instantiated by the Client.
+    ///
+    /// The key is the shard ID and the value is the shard itself.
+    ///
+    /// # Examples
+    ///
+    /// If you call [`client.start_shard(3, 5)`][`Client::start_shard`], this HashMap will only
+    /// ever contain a single key of `3`, as that's the only Shard the client is responsible for.
+    ///
+    /// If you call [`client.start_shards(10)`][`Client::start_shards`], this HashMap will contain
+    /// keys 0 through 9, one for each shard handled by the client.
+    ///
+    /// Printing the number of shards currently instantiated by the client every 5 seconds:
+    ///
+    /// ```rust,no_run
+    /// # use serenity::prelude::*;
+    /// # use std::time::Duration;
+    /// #
+    /// # fn run(client: Client) {
+    /// // Create a clone of the `Arc` containing the shard manager.
+    /// let shard_manager = client.shard_manager.clone();
+    ///
+    /// tokio::spawn(async move {
+    ///     loop {
+    ///         let count = shard_manager.shards_instantiated().await.len();
+    ///         println!("Shard count instantiated: {}", count);
+    ///
+    ///         tokio::time::sleep(Duration::from_millis(5000)).await;
+    ///     }
+    /// });
+    /// # }
+    /// ```
+    ///
+    /// Shutting down all connections after one minute of operation:
+    ///
+    /// ```rust,no_run
+    /// # use serenity::prelude::*;
+    /// # use std::time::Duration;
+    /// #
+    /// # fn run(client: Client) {
+    /// // Create a clone of the `Arc` containing the shard manager.
+    /// let shard_manager = client.shard_manager.clone();
+    ///
+    /// // Create a thread which will sleep for 60 seconds and then have the shard manager
+    /// // shutdown.
+    /// tokio::spawn(async move {
+    ///     tokio::time::sleep(Duration::from_secs(60)).await;
+    ///
+    ///     shard_manager.shutdown_all().await;
+    ///
+    ///     println!("Shutdown shard manager!");
+    /// });
+    /// # }
+    /// ```
+    pub shard_manager: Arc<ShardManager>,
+    shard_manager_return_value: Receiver<Result<(), GatewayError>>,
     /// The voice manager for the client.
     ///
-    /// This is an ergonomic structure for interfacing over voice
+    /// This is an ergonomic structure for interfacing over shards' voice
     /// connections.
     #[cfg(feature = "voice")]
     pub voice_manager: Option<Arc<dyn VoiceGatewayManager + 'static>>,
-    /// URL that the client's will use to connect to the gateway.
+    /// URL that the client's shards will use to connect to the gateway.
     ///
     /// This is likely not important for production usage and is, at best, used for debugging.
     ///
-    /// This is wrapped in an `Arc<Mutex<T>>` so it will have an updated value available.
+    /// This is wrapped in an `Arc<Mutex<T>>` so all shards will have an updated value available.
     pub ws_url: Arc<Mutex<String>>,
     /// The cache for the client.
     #[cfg(feature = "cache")]
@@ -502,9 +597,16 @@ impl Client {
     /// This will start receiving events in a loop and start dispatching the events to your
     /// registered handlers.
     ///
+    /// Note that this should be used only for users and for bots which are in less than 2500
+    /// guilds. If you have a reason for sharding and/or are in more than 2500 guilds, use one of
+    /// these depending on your use case:
+    ///
+    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
+    /// using sharding.
+    ///
     /// # Examples
     ///
-    /// Starting a Client:
+    /// Starting a Client with only 1 shard, out of 1 total:
     ///
     /// ```rust,no_run
     /// # use std::error::Error;
@@ -513,7 +615,7 @@ impl Client {
     ///
     /// # async fn run() -> Result<(), Box<dyn Error>> {
     /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let mut client = Client::builder(&token).await?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
     ///
     /// if let Err(why) = client.start().await {
     ///     println!("Err with client: {:?}", why);
@@ -521,23 +623,242 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// [gateway docs]: crate::gateway#sharding
     #[instrument(skip(self))]
     pub async fn start(&mut self) -> Result<()> {
-        self.start_connection().await
+        self.start_connection(0, 0, 1).await
     }
-    
+
+    /// Establish the connection(s) and start listening for events.
+    ///
+    /// This will start receiving events in a loop and start dispatching the events to your
+    /// registered handlers.
+    ///
+    /// This will retrieve an automatically determined number of shards to use from the API -
+    /// determined by Discord - and then open a number of shards equivalent to that amount.
+    ///
+    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
+    /// using sharding.
+    ///
+    /// # Examples
+    ///
+    /// Start as many shards as needed using autosharding:
+    ///
+    /// ```rust,no_run
+    /// # use std::error::Error;
+    /// # use serenity::prelude::*;
+    /// use serenity::Client;
+    ///
+    /// # async fn run() -> Result<(), Box<dyn Error>> {
+    /// let token = std::env::var("DISCORD_TOKEN")?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    ///
+    /// if let Err(why) = client.start_autosharded().await {
+    ///     println!("Err with client: {:?}", why);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
     /// # Errors
     ///
-    /// Returns a [`ClientError::Shutdown`] when the client shuts down due to an error.
+    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
+    ///
+    /// [gateway docs]: crate::gateway#sharding
+    #[instrument(skip(self))]
+    pub async fn start_autosharded(&mut self) -> Result<()> {
+        let (end, total) = {
+            let res = self.http.get_bot_gateway().await?;
+
+            (res.shards - 1, res.shards)
+        };
+
+        self.start_connection(0, end, total).await
+    }
+
+    /// Establish a sharded connection and start listening for events.
+    ///
+    /// This will start receiving events and dispatch them to your registered handlers.
+    ///
+    /// This will create a single shard by ID. If using one shard per process, you will need to
+    /// start other processes with the other shard IDs in some way.
+    ///
+    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
+    /// using sharding.
+    ///
+    /// # Examples
+    ///
+    /// Start shard 3 of 5:
+    ///
+    /// ```rust,no_run
+    /// # use std::error::Error;
+    /// # use serenity::prelude::*;
+    /// use serenity::Client;
+    ///
+    /// # async fn run() -> Result<(), Box<dyn Error>> {
+    /// let token = std::env::var("DISCORD_TOKEN")?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    ///
+    /// if let Err(why) = client.start_shard(3, 5).await {
+    ///     println!("Err with client: {:?}", why);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Start shard 0 of 1 (you may also be interested in [`Self::start`] or
+    /// [`Self::start_autosharded`]):
+    ///
+    /// ```rust,no_run
+    /// # use std::error::Error;
+    /// # use serenity::prelude::*;
+    /// use serenity::Client;
+    ///
+    /// # async fn run() -> Result<(), Box<dyn Error>> {
+    /// let token = std::env::var("DISCORD_TOKEN")?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    ///
+    /// if let Err(why) = client.start_shard(0, 1).await {
+    ///     println!("Err with client: {:?}", why);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
+    ///
+    /// [gateway docs]: crate::gateway#sharding
+    #[instrument(skip(self))]
+    pub async fn start_shard(&mut self, shard: u32, shards: u32) -> Result<()> {
+        self.start_connection(shard, shard, shards).await
+    }
+
+    /// Establish sharded connections and start listening for events.
+    ///
+    /// This will start receiving events and dispatch them to your registered handlers.
+    ///
+    /// This will create and handle all shards within this single process. If you only need to
+    /// start a single shard within the process, or a range of shards, use [`Self::start_shard`] or
+    /// [`Self::start_shard_range`], respectively.
+    ///
+    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
+    /// using sharding.
+    ///
+    /// # Examples
+    ///
+    /// Start all of 8 shards:
+    ///
+    /// ```rust,no_run
+    /// # use std::error::Error;
+    /// # use serenity::prelude::*;
+    /// use serenity::Client;
+    ///
+    /// # async fn run() -> Result<(), Box<dyn Error>> {
+    /// let token = std::env::var("DISCORD_TOKEN")?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    ///
+    /// if let Err(why) = client.start_shards(8).await {
+    ///     println!("Err with client: {:?}", why);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
+    ///
+    /// [Gateway docs]: crate::gateway#sharding
+    #[instrument(skip(self))]
+    pub async fn start_shards(&mut self, total_shards: u32) -> Result<()> {
+        self.start_connection(0, total_shards - 1, total_shards).await
+    }
+
+    /// Establish a range of sharded connections and start listening for events.
+    ///
+    /// This will start receiving events and dispatch them to your registered handlers.
+    ///
+    /// This will create and handle all shards within a given range within this single process. If
+    /// you only need to start a single shard within the process, or all shards within the process,
+    /// use [`Self::start_shard`] or [`Self::start_shards`], respectively.
+    ///
+    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
+    /// using sharding.
+    ///
+    /// # Examples
+    ///
+    /// For a bot using a total of 10 shards, initialize shards 4 through 7:
+    ///
+    /// ```rust,no_run
+    /// # use std::error::Error;
+    /// # use serenity::prelude::*;
+    /// use serenity::Client;
+    ///
+    /// # async fn run() -> Result<(), Box<dyn Error>> {
+    /// let token = std::env::var("DISCORD_TOKEN")?;
+    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    ///
+    /// if let Err(why) = client.start_shard_range(4..7, 10).await {
+    ///     println!("Err with client: {:?}", why);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
+    ///
+    /// [Gateway docs]: crate::gateway#sharding
+    #[instrument(skip(self))]
+    pub async fn start_shard_range(&mut self, range: Range<u32>, total_shards: u32) -> Result<()> {
+        self.start_connection(range.start, range.end, total_shards).await
+    }
+
+    /// Shard data layout is:
+    /// 0: first shard number to initialize
+    /// 1: shard number to initialize up to and including
+    /// 2: total number of shards the bot is sharding for
+    ///
+    /// Not all shards need to be initialized in this process.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
     #[instrument(skip(self))]
     async fn start_connection(
         &mut self,
+        start_shard: u32,
+        end_shard: u32,
+        total_shards: u32,
     ) -> Result<()> {
         #[cfg(feature = "voice")]
         if let Some(voice_manager) = &self.voice_manager {
             let user = self.http.get_current_user().await?;
 
-            voice_manager.initialise(user.id).await;
+            voice_manager.initialise(total_shards, user.id).await;
+        }
+
+        let init = end_shard - start_shard + 1;
+
+        self.shard_manager.set_shards(start_shard, init, total_shards).await;
+
+        debug!("Initializing shard info: {} - {}/{}", start_shard, init, total_shards);
+
+        if let Err(why) = self.shard_manager.initialize() {
+            error!("Failed to boot a shard: {:?}", why);
+            info!("Shutting down all shards");
+
+            self.shard_manager.shutdown_all().await;
+
+            return Err(Error::Client(ClientError::ShardBootFailure));
+        }
+
+        if let Some(Err(err)) = self.shard_manager_return_value.next().await {
+            return Err(Error::Gateway(err));
         }
 
         Ok(())

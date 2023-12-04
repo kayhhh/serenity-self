@@ -32,6 +32,7 @@ use crate::json::from_str;
 use crate::json::to_string;
 #[cfg(feature = "client")]
 use crate::model::event::GatewayEvent;
+use crate::model::gateway::ShardInfo;
 use crate::model::id::{GuildId, UserId};
 #[cfg(feature = "client")]
 use crate::Error;
@@ -93,14 +94,11 @@ struct WebSocketMessage<'a> {
 pub struct WsClient(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 #[cfg(feature = "client")]
-#[allow(unused)]
 const TIMEOUT: Duration = Duration::from_millis(5); // 500
 #[cfg(feature = "client")]
-#[allow(unused)]
 const DECOMPRESSION_MULTIPLIER: usize = 1; // 3
 
 impl WsClient {
-    #[allow(unused)]
     pub(crate) async fn connect(url: Url) -> Result<Self> {
         let config = WebSocketConfig {
             max_message_size: None,
@@ -113,7 +111,6 @@ impl WsClient {
     }
 
     #[cfg(feature = "client")]
-    #[allow(unused)]
     pub(crate) async fn recv_json(&mut self) -> Result<Option<GatewayEvent>> {
         let message = match timeout(TIMEOUT, self.0.next()).await {
             Ok(Some(Ok(msg))) => msg,
@@ -163,14 +160,12 @@ impl WsClient {
 
     /// Delegate to `StreamExt::next`
     #[cfg(feature = "client")]
-    #[allow(unused)]
     pub(crate) async fn next(&mut self) -> Option<std::result::Result<Message, WsError>> {
         self.0.next().await
     }
 
     /// Delegate to `SinkExt::send`
     #[cfg(feature = "client")]
-    #[allow(unused)]
     pub(crate) async fn send(&mut self, message: Message) -> Result<()> {
         self.0.send(message).await?;
         Ok(())
@@ -178,7 +173,6 @@ impl WsClient {
 
     /// Delegate to `WebSocketStream::close`
     #[cfg(feature = "client")]
-    #[allow(unused)]
     pub(crate) async fn close(&mut self, msg: Option<CloseFrame<'_>>) -> Result<()> {
         self.0.close(msg).await?;
         Ok(())
@@ -188,12 +182,13 @@ impl WsClient {
     pub async fn send_chunk_guild(
         &mut self,
         guild_id: GuildId,
+        shard_info: &ShardInfo,
         limit: Option<u16>,
         presences: bool,
         filter: ChunkGuildFilter,
         nonce: Option<&str>,
     ) -> Result<()> {
-        debug!("Requesting member chunks");
+        debug!("[{:?}] Requesting member chunks", shard_info);
 
         let (query, user_ids) = match filter {
             ChunkGuildFilter::None => (Some(String::new()), None),
@@ -216,8 +211,8 @@ impl WsClient {
     }
 
     #[instrument(skip(self))]
-    pub async fn send_heartbeat(&mut self, seq: Option<u64>) -> Result<()> {
-        trace!("Sending heartbeat d: {:?}", seq);
+    pub async fn send_heartbeat(&mut self, shard_info: &ShardInfo, seq: Option<u64>) -> Result<()> {
+        trace!("[{:?}] Sending heartbeat d: {:?}", shard_info, seq);
 
         self.send_json(&WebSocketMessage {
             op: Opcode::Heartbeat,
@@ -263,12 +258,13 @@ impl WsClient {
     #[instrument(skip(self))]
     pub async fn send_presence_update(
         &mut self,
+        shard_info: &ShardInfo,
         presence: &PresenceData,
     ) -> Result<()> {
         let activities: Vec<_> = presence.activity.iter().collect();
         let now = SystemTime::now();
 
-        debug!("Sending presence update");
+        debug!("[{:?}] Sending presence update", shard_info);
 
         self.send_json(&WebSocketMessage {
             op: Opcode::PresenceUpdate,
@@ -285,11 +281,12 @@ impl WsClient {
     #[instrument(skip(self, token))]
     pub async fn send_resume(
         &mut self,
+        shard_info: &ShardInfo,
         session_id: &str,
         seq: u64,
         token: &str,
     ) -> Result<()> {
-        debug!("Sending resume; seq: {}", seq);
+        debug!("[{:?}] Sending resume; seq: {}", shard_info, seq);
 
         self.send_json(&WebSocketMessage {
             op: Opcode::Resume,

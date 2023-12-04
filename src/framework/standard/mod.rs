@@ -147,7 +147,7 @@ impl StandardFramework {
     /// framework.configure(Configuration::new().with_whitespace(true).prefix("~"));
     ///
     /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let mut client = Client::builder(&token)
+    /// let mut client = Client::builder(&token, GatewayIntents::default())
     ///     .event_handler(Handler)
     ///     .framework(framework)
     ///     .await?;

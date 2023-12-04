@@ -130,6 +130,8 @@ impl EditMessage {
     ///
     /// ```rust,no_run
     /// # use serenity::all::*;
+    /// # #[cfg(feature = "collector")]
+    /// # async fn test(ctx: &Context, channel_id: ChannelId) -> Result<(), Error> {
     /// use std::time::Duration;
     ///
     /// use futures::StreamExt;
@@ -142,7 +144,7 @@ impl EditMessage {
     /// // embed appears immediately), no MessageUpdate event is sent. To not wait forever in those
     /// // cases, a timeout of 2000ms was added.
     /// let msg_id = msg.id;
-    /// let mut message_updates = serenity::collector::collect(&ctx, move |ev| match ev {
+    /// let mut message_updates = serenity::collector::collect(&ctx.shard, move |ev| match ev {
     ///     Event::MessageUpdate(x) if x.id == msg_id => Some(()),
     ///     _ => None,
     /// });

@@ -159,9 +159,9 @@ fn parse_token(token: impl AsRef<str>) -> String {
     let token = token.as_ref().trim();
 
     if token.starts_with("Bot ") || token.starts_with("Bearer ") {
-        panic!("Bot tokens are not supported in Serenity-self");
-    } else {
         token.to_string()
+    } else {
+        format!("Bot {token}")
     }
 }
 
@@ -562,7 +562,8 @@ impl Http {
 
     /// Creates a guild with the data provided.
     ///
-    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received.
+    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received
+    /// over a [`Shard`], if at least one is running.
     ///
     /// **Note**: This endpoint is currently limited to 10 active guilds. The limits are raised for
     /// whitelisted [GameBridge] applications. See the [documentation on this endpoint] for more
@@ -587,6 +588,7 @@ impl Http {
     /// # }
     /// ```
     ///
+    /// [`Shard`]: crate::gateway::Shard
     /// [GameBridge]: https://discord.com/developers/docs/topics/gamebridge
     /// [documentation on this endpoint]:
     /// https://discord.com/developers/docs/resources/guild#create-guild

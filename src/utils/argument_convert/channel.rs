@@ -59,6 +59,7 @@ async fn lookup_channel_global(
                 return Ok(Channel::Guild(channel.clone()));
             }
         }
+
         return Err(ChannelParseError::NotFoundOrMalformed);
     }
 

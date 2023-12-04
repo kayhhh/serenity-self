@@ -177,7 +177,6 @@ impl EmojiIdentifier {
     }
 }
 
-
 #[cfg(all(feature = "model", feature = "utils"))]
 impl fmt::Display for EmojiIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

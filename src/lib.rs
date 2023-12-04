@@ -9,6 +9,10 @@
 //! [`Event::MessageCreate`] is received. Each handler is given a [`Context`], giving information
 //! about the event. See the [client's module-level documentation].
 //!
+//! The [`Shard`] is transparently handled by the library, removing unnecessary complexity. Sharded
+//! connections are automatically handled for you. See the [gateway's documentation][gateway docs]
+//! for more information.
+//!
 //! A [`Cache`] is also provided for you. This will be updated automatically for you as data is
 //! received from the Discord API via events. When calling a method on a [`Context`], the cache
 //! will first be searched for relevant data to avoid unnecessary HTTP requests to the Discord API.
@@ -29,7 +33,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! serenity = "0.13"
+//! serenity = "0.12"
 //! ```
 //!
 //! [`Cache`]: crate::cache::Cache
@@ -37,6 +41,7 @@
 //! [`EventHandler::message`]: crate::client::EventHandler::message
 //! [`Event`]: crate::model::event::Event
 //! [`Event::MessageCreate`]: crate::model::event::Event::MessageCreate
+//! [`Shard`]: crate::gateway::Shard
 //! [`examples`]: https://github.com/serenity-rs/serenity/blob/current/examples
 //! [cache docs]: crate::cache
 //! [client's module-level documentation]: crate::client
@@ -76,7 +81,7 @@
     clippy::missing_panics_doc, // clippy::unwrap_used
 )]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-#![type_length_limit = "3294819"]
+#![type_length_limit = "3294819"] // needed so ShardRunner::run compiles with instrument.
 
 #[macro_use]
 extern crate serde;
@@ -95,6 +100,8 @@ pub mod builder;
 pub mod cache;
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "collector")]
+pub mod collector;
 #[cfg(feature = "framework")]
 pub mod framework;
 #[cfg(feature = "gateway")]
@@ -145,6 +152,9 @@ pub mod all {
     #[cfg(feature = "client")]
     #[doc(no_inline)]
     pub use crate::client::*;
+    #[cfg(feature = "collector")]
+    #[doc(no_inline)]
+    pub use crate::collector::*;
     #[doc(no_inline)]
     pub use crate::constants::{close_codes::*, *};
     #[cfg(feature = "framework")]

@@ -21,6 +21,10 @@ use crate::builder::{
 };
 #[cfg(feature = "cache")]
 use crate::cache::{self, Cache};
+#[cfg(feature = "collector")]
+use crate::collector::{MessageCollector, ReactionCollector};
+#[cfg(feature = "collector")]
+use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, Typing};
 #[cfg(all(feature = "cache", feature = "model"))]
@@ -723,9 +727,9 @@ impl GuildChannel {
     /// Calculate the permissions of a [`User`] who posted a [`Message`] in a channel:
     ///
     /// ```rust,no_run
-    /// use serenity::model::prelude::*;
-    /// use serenity::prelude::*;
-    /// struct Handler;
+    /// # use serenity::model::prelude::*;
+    /// # use serenity::prelude::*;
+    /// # struct Handler;
     ///
     /// #[serenity::async_trait]
     /// impl EventHandler for Handler {
@@ -740,57 +744,6 @@ impl GuildChannel {
     ///         }
     ///     }
     /// }
-    ///
-    /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut client =
-    ///     Client::builder("token").event_handler(Handler).await?;
-    ///
-    /// client.start().await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    ///
-    /// Check if the current user has the [Attach Files] and [Send Messages] permissions (note:
-    /// serenity will automatically check this for; this is for demonstrative purposes):
-    ///
-    /// ```rust,no_run
-    /// use serenity::builder::{CreateAttachment, CreateMessage};
-    /// use serenity::model::channel::Channel;
-    /// use serenity::model::prelude::*;
-    /// use serenity::prelude::*;
-    /// use tokio::fs::File;
-    ///
-    /// struct Handler;
-    ///
-    /// #[serenity::async_trait]
-    /// impl EventHandler for Handler {
-    ///     async fn message(&self, context: Context, mut msg: Message) {
-    ///         let current_user_id = context.cache.current_user().id;
-    ///         let permissions = match context.cache.channel(msg.channel_id) {
-    ///             Some(channel) => channel.permissions_for_user(&context.cache, current_user_id),
-    ///             None => return,
-    ///         };
-    ///
-    ///         if let Ok(permissions) = permissions {
-    ///             if !permissions.contains(Permissions::ATTACH_FILES | Permissions::SEND_MESSAGES) {
-    ///                 return;
-    ///             }
-    ///
-    ///             let file = CreateAttachment::path("cat.png").await.unwrap();
-    ///
-    ///             let builder = CreateMessage::new().content("here's a cat");
-    ///             let _ = msg.channel_id.send_files(&context.http, [file], builder).await;
-    ///         }
-    ///     }
-    /// }
-    ///
-    /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut client =
-    ///     Client::builder("token").event_handler(Handler).await?;
-    ///
-    /// client.start().await?;
-    /// # Ok(())
-    /// # }
     /// ```
     ///
     /// # Errors
@@ -1076,6 +1029,35 @@ impl GuildChannel {
                 .collect::<Vec<Member>>()),
             _ => Err(Error::from(ModelError::InvalidChannelType)),
         }
+    }
+
+    /// Returns a builder which can be awaited to obtain a message or stream of messages sent in
+    /// this guild channel.
+    #[cfg(feature = "collector")]
+    pub fn await_reply(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
+        MessageCollector::new(shard_messenger).channel_id(self.id)
+    }
+
+    /// Same as [`Self::await_reply`].
+    #[cfg(feature = "collector")]
+    pub fn await_replies(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
+        self.await_reply(shard_messenger)
+    }
+
+    /// Returns a stream builder which can be awaited to obtain a reaction or stream of reactions
+    /// sent by this guild channel.
+    #[cfg(feature = "collector")]
+    pub fn await_reaction(&self, shard_messenger: impl AsRef<ShardMessenger>) -> ReactionCollector {
+        ReactionCollector::new(shard_messenger).channel_id(self.id)
+    }
+
+    /// Same as [`Self::await_reaction`].
+    #[cfg(feature = "collector")]
+    pub fn await_reactions(
+        &self,
+        shard_messenger: impl AsRef<ShardMessenger>,
+    ) -> ReactionCollector {
+        self.await_reaction(shard_messenger)
     }
 
     /// Creates a webhook in the channel.

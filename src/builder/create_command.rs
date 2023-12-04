@@ -380,7 +380,6 @@ impl CreateCommand {
     }
 
     /// Specifies the description of the application command.
-    /// [`Self::new`].
     ///
     /// **Note**: Must be between 1 and 100 characters long.
     pub fn description(mut self, description: impl Into<String>) -> Self {

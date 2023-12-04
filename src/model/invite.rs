@@ -3,6 +3,8 @@
 use super::prelude::*;
 #[cfg(feature = "model")]
 use crate::builder::CreateInvite;
+#[cfg(all(feature = "cache", feature = "model"))]
+use crate::cache::Cache;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http};
 #[cfg(feature = "model")]
@@ -219,6 +221,49 @@ pub struct InviteGuild {
     pub vanity_url_code: Option<String>,
     pub nsfw_level: NsfwLevel,
     pub premium_subscription_count: Option<u64>,
+}
+
+#[cfg(feature = "model")]
+impl InviteGuild {
+    /// Returns the Id of the shard associated with the guild.
+    ///
+    /// When the cache is enabled this will automatically retrieve the total number of shards.
+    ///
+    /// **Note**: When the cache is enabled, this function unlocks the cache to retrieve the total
+    /// number of shards in use. If you already have the total, consider using [`utils::shard_id`].
+    ///
+    /// [`utils::shard_id`]: crate::utils::shard_id
+    #[cfg(all(feature = "cache", feature = "utils"))]
+    #[inline]
+    #[must_use]
+    pub fn shard_id(&self, cache: impl AsRef<Cache>) -> u32 {
+        self.id.shard_id(&cache)
+    }
+
+    /// Returns the Id of the shard associated with the guild.
+    ///
+    /// When the cache is enabled this will automatically retrieve the total number of shards.
+    ///
+    /// When the cache is not enabled, the total number of shards being used will need to be
+    /// passed.
+    ///
+    /// # Examples
+    ///
+    /// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using 17 shards:
+    ///
+    /// ```rust,ignore
+    /// use serenity::utils;
+    ///
+    /// // assumes a `guild` has already been bound
+    ///
+    /// assert_eq!(guild.shard_id(17), 7);
+    /// ```
+    #[cfg(all(feature = "utils", not(feature = "cache")))]
+    #[inline]
+    #[must_use]
+    pub fn shard_id(&self, shard_count: u32) -> u32 {
+        self.id.shard_id(shard_count)
+    }
 }
 
 /// Detailed information about an invite. This information can only be retrieved by anyone with the

@@ -8,6 +8,8 @@ mod content_safe;
 mod custom_message;
 mod formatted_timestamp;
 mod message_builder;
+#[cfg(feature = "collector")]
+mod quick_modal;
 
 pub mod token;
 
@@ -18,6 +20,8 @@ pub use argument_convert::*;
 #[cfg(feature = "cache")]
 pub use content_safe::*;
 pub use formatted_timestamp::*;
+#[cfg(feature = "collector")]
+pub use quick_modal::*;
 use url::Url;
 
 pub use self::custom_message::CustomMessage;
@@ -476,6 +480,25 @@ pub(crate) fn user_perms(cache: impl AsRef<Cache>, channel_id: ChannelId) -> Res
     };
 
     Ok(guild.user_permissions_in(channel, member))
+}
+
+/// Calculates the Id of the shard responsible for a guild, given its Id and total number of shards
+/// used.
+///
+/// # Examples
+///
+/// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using 17 shards:
+///
+/// ```rust
+/// use serenity::model::id::GuildId;
+/// use serenity::utils;
+///
+/// assert_eq!(utils::shard_id(GuildId::new(81384788765712384), 17), 7);
+/// ```
+#[inline]
+#[must_use]
+pub fn shard_id(guild_id: GuildId, shard_count: u32) -> u32 {
+    ((guild_id.get() >> 22) % (shard_count as u64)) as u32
 }
 
 #[cfg(test)]
