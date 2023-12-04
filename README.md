@@ -216,7 +216,7 @@ features = [
     "utils",
     "rustls_backend",
 ]
-version = "0.11"
+version = "0.13"
 ```
 
 # Dependencies
