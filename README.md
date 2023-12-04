@@ -45,7 +45,7 @@ docs.
 
 # Fork Changes
 
-Changed the token check to allow user tokens to allow selfbots.
+Changed the token check to allow user tokens for the development of selfbots.
 
 Credits
 - [Serenity](https://github.com/serenity-rs/serenity) for the original Discord API wrapper
