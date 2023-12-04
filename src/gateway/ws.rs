@@ -94,9 +94,9 @@ struct WebSocketMessage<'a> {
 pub struct WsClient(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 #[cfg(feature = "client")]
-const TIMEOUT: Duration = Duration::from_millis(5); // 500
+const TIMEOUT: Duration = Duration::from_millis(500);
 #[cfg(feature = "client")]
-const DECOMPRESSION_MULTIPLIER: usize = 1; // 3
+const DECOMPRESSION_MULTIPLIER: usize = 3;
 
 impl WsClient {
     pub(crate) async fn connect(url: Url) -> Result<Self> {
