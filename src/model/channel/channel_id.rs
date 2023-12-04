@@ -22,8 +22,6 @@ use crate::builder::{
 };
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::cache::{Cache, GuildChannelRef};
-#[cfg(feature = "collector")]
-use crate::collector::{MessageCollector, ReactionCollector};
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, Typing};
 #[cfg(feature = "model")]
@@ -829,34 +827,6 @@ impl ChannelId {
         builder: CreateWebhook<'_>,
     ) -> Result<Webhook> {
         builder.execute(cache_http, self).await
-    }
-
-    /// Returns a builder which can be awaited to obtain a message or stream of messages in this
-    /// channel.
-    #[cfg(feature = "collector")]
-    pub fn await_reply(self) -> MessageCollector {
-        MessageCollector::new().channel_id(self)
-    }
-
-    /// Same as [`Self::await_reply`].
-    #[cfg(feature = "collector")]
-    pub fn await_replies(&self) -> MessageCollector {
-        self.await_reply()
-    }
-
-    /// Returns a builder which can be awaited to obtain a reaction or stream of reactions sent in
-    /// this channel.
-    #[cfg(feature = "collector")]
-    pub fn await_reaction(self) -> ReactionCollector {
-        ReactionCollector::new().channel_id(self)
-    }
-
-    /// Same as [`Self::await_reaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_reactions(
-        &self
-    ) -> ReactionCollector {
-        self.await_reaction()
     }
 
     /// Gets a stage instance.

@@ -23,7 +23,6 @@ use serenity::async_trait;
 use serenity::client::{Client, Context, EventHandler};
 use serenity::framework::standard::macros::{command, group, hook};
 use serenity::framework::standard::{CommandResult, Configuration, StandardFramework};
-use serenity::gateway::ShardManager;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 use tokio::sync::Mutex;
@@ -74,12 +73,6 @@ impl TypeMapKey for RillRateComponents {
     // it's being done with `command_usage_values` this will make it considerably less likely to
     // deadlock.
     type Value = Arc<Components>;
-}
-
-struct ShardManagerContainer;
-
-impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<ShardManager>;
 }
 
 #[group]

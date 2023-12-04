@@ -130,8 +130,6 @@ impl EditMessage {
     ///
     /// ```rust,no_run
     /// # use serenity::all::*;
-    /// # #[cfg(feature = "collector")]
-    /// # async fn test(ctx: &Context, channel_id: ChannelId) -> Result<(), Error> {
     /// use std::time::Duration;
     ///
     /// use futures::StreamExt;

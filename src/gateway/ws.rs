@@ -93,11 +93,14 @@ struct WebSocketMessage<'a> {
 pub struct WsClient(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 #[cfg(feature = "client")]
-const TIMEOUT: Duration = Duration::from_millis(500);
+#[allow(unused)]
+const TIMEOUT: Duration = Duration::from_millis(5); // 500
 #[cfg(feature = "client")]
-const DECOMPRESSION_MULTIPLIER: usize = 3;
+#[allow(unused)]
+const DECOMPRESSION_MULTIPLIER: usize = 1; // 3
 
 impl WsClient {
+    #[allow(unused)]
     pub(crate) async fn connect(url: Url) -> Result<Self> {
         let config = WebSocketConfig {
             max_message_size: None,
@@ -110,6 +113,7 @@ impl WsClient {
     }
 
     #[cfg(feature = "client")]
+    #[allow(unused)]
     pub(crate) async fn recv_json(&mut self) -> Result<Option<GatewayEvent>> {
         let message = match timeout(TIMEOUT, self.0.next()).await {
             Ok(Some(Ok(msg))) => msg,
@@ -159,12 +163,14 @@ impl WsClient {
 
     /// Delegate to `StreamExt::next`
     #[cfg(feature = "client")]
+    #[allow(unused)]
     pub(crate) async fn next(&mut self) -> Option<std::result::Result<Message, WsError>> {
         self.0.next().await
     }
 
     /// Delegate to `SinkExt::send`
     #[cfg(feature = "client")]
+    #[allow(unused)]
     pub(crate) async fn send(&mut self, message: Message) -> Result<()> {
         self.0.send(message).await?;
         Ok(())
@@ -172,6 +178,7 @@ impl WsClient {
 
     /// Delegate to `WebSocketStream::close`
     #[cfg(feature = "client")]
+    #[allow(unused)]
     pub(crate) async fn close(&mut self, msg: Option<CloseFrame<'_>>) -> Result<()> {
         self.0.close(msg).await?;
         Ok(())

@@ -39,6 +39,7 @@ impl fmt::Debug for Context {
 impl Context {
     /// Create a new Context to be passed to an event handler.
     #[cfg(feature = "gateway")]
+    #[allow(unused)]
     pub(crate) fn new(
         data: Arc<RwLock<TypeMap>>,
         http: Arc<Http>,
@@ -84,6 +85,7 @@ impl Context {
     ///
     /// [`Online`]: OnlineStatus::Online
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn online(&self) {
         self.online();
@@ -113,6 +115,7 @@ impl Context {
     ///
     /// [`Idle`]: OnlineStatus::Idle
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn idle(&self) {
         self.idle();
@@ -142,6 +145,7 @@ impl Context {
     ///
     /// [`DoNotDisturb`]: OnlineStatus::DoNotDisturb
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn dnd(&self) {
         self.dnd();
@@ -171,6 +175,7 @@ impl Context {
     ///
     /// [`Invisible`]: OnlineStatus::Invisible
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn invisible(&self) {
         self.invisible();
@@ -234,6 +239,7 @@ impl Context {
     /// }
     /// ```
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn set_activity(&self, activity: Option<ActivityData>) {
         self.set_activity(activity);
@@ -284,6 +290,7 @@ impl Context {
     /// [`DoNotDisturb`]: OnlineStatus::DoNotDisturb
     /// [`Idle`]: OnlineStatus::Idle
     #[cfg(feature = "gateway")]
+    #[allow(unconditional_recursion)]
     #[inline]
     pub fn set_presence(&self, activity: Option<ActivityData>, status: OnlineStatus) {
         self.set_presence(activity, status);

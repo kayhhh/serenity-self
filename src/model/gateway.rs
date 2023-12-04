@@ -2,7 +2,6 @@
 
 use std::num::NonZeroU16;
 
-use serde::ser::SerializeSeq;
 use url::Url;
 
 use super::prelude::*;

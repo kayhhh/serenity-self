@@ -13,8 +13,6 @@ use super::prelude::*;
 use crate::builder::{Builder, CreateMessage, EditProfile};
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::cache::{Cache, UserRef};
-#[cfg(feature = "collector")]
-use crate::collector::{MessageCollector, ReactionCollector};
 #[cfg(feature = "model")]
 use crate::http::CacheHttp;
 #[cfg(feature = "model")]
@@ -603,34 +601,6 @@ impl User {
 
         // At this point we're guaranteed to do an API call.
         guild_id.member(cache_http, &self.id).await.ok().and_then(|member| member.nick)
-    }
-
-    /// Returns a builder which can be awaited to obtain a message or stream of messages sent by
-    /// this user.
-    #[cfg(feature = "collector")]
-    pub fn await_reply(&self) -> MessageCollector {
-        MessageCollector::new().author_id(self.id)
-    }
-
-    /// Same as [`Self::await_reply`].
-    #[cfg(feature = "collector")]
-    pub fn await_replies(&self) -> MessageCollector {
-        self.await_reply()
-    }
-
-    /// Returns a builder which can be awaited to obtain a reaction or stream of reactions sent by
-    /// this user.
-    #[cfg(feature = "collector")]
-    pub fn await_reaction(&self) -> ReactionCollector {
-        ReactionCollector::new().author_id(self.id)
-    }
-
-    /// Same as [`Self::await_reaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_reactions(
-        &self
-    ) -> ReactionCollector {
-        self.await_reaction()
     }
 }
 

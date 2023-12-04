@@ -53,7 +53,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(about, am_i_admin, say, commands, ping, latency, some_long_command, upper_command)]
+#[commands(about, am_i_admin, say, commands, ping, some_long_command, upper_command)]
 struct General;
 
 #[group]

@@ -3,11 +3,15 @@
 All notable changes to this project will be documented in this file.
 This project mostly adheres to [Semantic Versioning][semver].
 
-## [0.13.0] - 2023-12-03
+## [0.13.0-alpha2] - 2023-12-04
 
-This release turned out to be one of serenity's largest ever, with well over 300 PRs in total! It contains quite a few major breaking changes to the API. Therefore, the changelog for this release also serves as a migration guide for users upgrading from the 0.11 series.
+In a noteworthy advancement, Serenity-self now establishes a pioneering standard for simplicity and efficacy within Rust crates, particularly in the domain of user token support.
+This release builds upon the 0.13.0-alpha series, eliminating excessive flags associated with connection setup.
 
-Thanks to the following for their contributions:
+This milestone positions Serenity-self as the leading Rust crate for Discord user support, specifically tailored for the development of selfbots.
+The focus on minimal flags underscores a commitment to streamlining processes, making it an unparalleled choice for developers seeking a straightforward and effective solution in the Rust ecosystem.
+
+Thanks to the following for their contributions on Serenity before Serenity-self was made:
 
 - [@arqunis]
 - [@alakhpc]
@@ -36,10 +40,40 @@ Thanks to the following for their contributions:
 - [@StckOverflw]
 - [@tatsuya6502]
 - [@tazz4843]
-- [@vaporoxxx]
+- [@vaporoxx]
 - [@Xaeroxe]
 
-### Builders
+### Changes in 0.13.0-alpha2:
+These are the changes in Serenity-self since the 0.13.0-alpha release.
+
+- All provided examples have been meticulously updated.
+
+In this release, Serenity-self continues to adhere to the principles established in the original version.
+It's important to note, however, that there are distinctions between the user and bot APIs which Serenity-self now focuses more on.
+
+The adjustments primarily focus on aligning with the revised approach to user account support.
+Notably, this entails the removal of both shards and intents from the examples.
+
+While users can perform many of the actions bots can, there are differences in the scope of their capabilities. 
+Users have access to a broader range of functionalities compared to bots.
+
+Several features have been intentionally removed to align with Discord's guidelines and best practices:
+
+1. **Intents:**
+   - The gateway technically accepts intents for user accounts. However, the use of intents for users is discouraged due to potential issues and is considered a violation of Discord's policies.
+
+2. **Shards:**
+   - Although the gateway accepts shards for user accounts, employing them is not recommended. Similar to intents, the use of shards for users is discouraged and can be flagged as a violation by Discord.
+
+These adjustments aim to ensure a smoother and compliant user experience, prioritizing adherence to Discord's standards. 
+Users are encouraged to review these changes and adjust their implementations accordingly for a more seamless integration with the Serenity-self crate.
+
+By eliminating the usage of shards and intents in the examples, streamlined and compliant integration for user accounts is ensured.
+This modification reflects commitment to adhering to Discord's guidelines and best practices.
+Users are encouraged to leverage these updated examples to seamlessly incorporate the latest features and improvements offered by the Serenity-self crate.
+
+### Builders (Before 0.13.0-alpha):
+These are the changes before Serenity-self became its own crate without syncing with Serenity's changes
 
 The closure-based API for constructing requests using the builder pattern has been ripped out and replaced. In place of closures, users must now pass in builder types directly. For example, in serenity 0.11, code like the following was very common:
 

@@ -42,6 +42,7 @@ macro_rules! update_cache {
     ($cache:ident, $event:ident) => {};
 }
 
+#[allow(unused)]
 pub(crate) fn dispatch_model(
     event: Event,
     context: &Context,
@@ -92,6 +93,7 @@ pub(crate) fn dispatch_model(
 ///
 /// Can return `None` if an event is unknown.
 #[cfg_attr(not(feature = "cache"), allow(unused_mut))]
+#[allow(unused)]
 fn update_cache_with_event(
     #[cfg(feature = "cache")] cache: &Cache,
     event: Event,

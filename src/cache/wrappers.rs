@@ -26,6 +26,7 @@ impl<K: Eq + Hash, V> MaybeMap<K, V> {
         self.0.as_ref()?.get_mut(k)
     }
 
+    #[allow(unused)]
     pub fn contains(&self, k: &K) -> bool {
         self.0.as_ref().is_some_and(|m| m.contains_key(k))
     }
@@ -42,6 +43,7 @@ impl<K: Eq + Hash, V> MaybeMap<K, V> {
         self.0.as_ref().map_or(0, |map| map.len())
     }
 
+    #[allow(unused)]
     pub fn shrink_to_fit(&self) {
         if let Some(map) = self.0.as_ref() {
             map.shrink_to_fit();

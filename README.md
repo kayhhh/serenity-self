@@ -109,11 +109,9 @@ library, can be found in the [`examples`] directory.
 
 Add the following to your `Cargo.toml` file:
 
-Commit `8122f98` is the latest working commit while new changes are being made.
-
 ```toml
 [dependencies]
-serenity = { git = "https://github.com/nshout/serenity-self", branch = "current", rev = "8122f98" }
+serenity = { git = "https://github.com/nshout/serenity-self", branch = "current" }
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
 ```
 

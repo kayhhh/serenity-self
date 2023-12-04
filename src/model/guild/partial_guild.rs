@@ -16,8 +16,6 @@ use crate::builder::{
 };
 #[cfg(all(feature = "cache", feature = "utils", feature = "client"))]
 use crate::cache::Cache;
-#[cfg(feature = "collector")]
-use crate::collector::{MessageCollector, ReactionCollector};
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, UserPagination};
 #[cfg(feature = "model")]
@@ -1489,34 +1487,6 @@ impl PartialGuild {
     #[must_use]
     pub fn role_by_name(&self, role_name: &str) -> Option<&Role> {
         self.roles.values().find(|role| role_name == role.name)
-    }
-
-    /// Returns a builder which can be awaited to obtain a message or stream of messages in this
-    /// guild.
-    #[cfg(feature = "collector")]
-    pub fn await_reply(&self) -> MessageCollector {
-        MessageCollector::new().guild_id(self.id)
-    }
-
-    /// Same as [`Self::await_reply`].
-    #[cfg(feature = "collector")]
-    pub fn await_replies(&self) -> MessageCollector {
-        self.await_reply()
-    }
-
-    /// Returns a builder which can be awaited to obtain a message or stream of reactions sent in
-    /// this guild.
-    #[cfg(feature = "collector")]
-    pub fn await_reaction(&self) -> ReactionCollector {
-        ReactionCollector::new().guild_id(self.id)
-    }
-
-    /// Same as [`Self::await_reaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_reactions(
-        &self
-    ) -> ReactionCollector {
-        self.await_reaction()
     }
 
     /// Gets the guild active threads.

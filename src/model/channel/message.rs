@@ -9,12 +9,6 @@ use std::fmt::Write;
 use crate::builder::{Builder, CreateAllowedMentions, CreateMessage, EditMessage};
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::cache::{Cache, GuildRef};
-#[cfg(feature = "collector")]
-use crate::collector::{
-    ComponentInteractionCollector,
-    ModalInteractionCollector,
-    ReactionCollector,
-};
 #[cfg(feature = "model")]
 use crate::constants;
 #[cfg(feature = "model")]
@@ -755,55 +749,6 @@ impl Message {
     #[inline]
     pub async fn link_ensured(&self, cache_http: impl CacheHttp) -> String {
         self.id.link_ensured(cache_http, self.channel_id, self.guild_id).await
-    }
-
-    /// Returns a builder which can be awaited to obtain a reaction or stream of reactions on this
-    /// message.
-    #[cfg(feature = "collector")]
-    pub fn await_reaction(&self) -> ReactionCollector {
-        ReactionCollector::new().message_id(self.id)
-    }
-
-    /// Same as [`Self::await_reaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_reactions(
-        &self
-    ) -> ReactionCollector {
-        self.await_reaction()
-    }
-
-    /// Returns a builder which can be awaited to obtain a single component interactions or a
-    /// stream of component interactions on this message.
-    #[cfg(feature = "collector")]
-    pub fn await_component_interaction(
-        &self
-    ) -> ComponentInteractionCollector {
-        ComponentInteractionCollector::new().message_id(self.id)
-    }
-
-    /// Same as [`Self::await_component_interaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_component_interactions(
-        &self
-    ) -> ComponentInteractionCollector {
-        self.await_component_interaction()
-    }
-
-    /// Returns a builder which can be awaited to obtain a model submit interaction or stream of
-    /// modal submit interactions on this message.
-    #[cfg(feature = "collector")]
-    pub fn await_modal_interaction(
-        &self
-    ) -> ModalInteractionCollector {
-        ModalInteractionCollector::new().message_id(self.id)
-    }
-
-    /// Same as [`Self::await_modal_interaction`].
-    #[cfg(feature = "collector")]
-    pub fn await_modal_interactions(
-        &self
-    ) -> ModalInteractionCollector {
-        self.await_modal_interaction()
     }
 
     /// Retrieves the message channel's category ID if the channel has one.
