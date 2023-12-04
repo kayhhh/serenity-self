@@ -17,8 +17,6 @@ use crate::collector::{
 };
 #[cfg(feature = "model")]
 use crate::constants;
-#[cfg(feature = "collector")]
-use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http};
 use crate::model::application::{ActionRow, MessageInteraction};
@@ -762,55 +760,50 @@ impl Message {
     /// Returns a builder which can be awaited to obtain a reaction or stream of reactions on this
     /// message.
     #[cfg(feature = "collector")]
-    pub fn await_reaction(&self, shard_messenger: impl AsRef<ShardMessenger>) -> ReactionCollector {
-        ReactionCollector::new(shard_messenger).message_id(self.id)
+    pub fn await_reaction(&self) -> ReactionCollector {
+        ReactionCollector::new().message_id(self.id)
     }
 
     /// Same as [`Self::await_reaction`].
     #[cfg(feature = "collector")]
     pub fn await_reactions(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ReactionCollector {
-        self.await_reaction(shard_messenger)
+        self.await_reaction()
     }
 
     /// Returns a builder which can be awaited to obtain a single component interactions or a
     /// stream of component interactions on this message.
     #[cfg(feature = "collector")]
     pub fn await_component_interaction(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ComponentInteractionCollector {
-        ComponentInteractionCollector::new(shard_messenger).message_id(self.id)
+        ComponentInteractionCollector::new().message_id(self.id)
     }
 
     /// Same as [`Self::await_component_interaction`].
     #[cfg(feature = "collector")]
     pub fn await_component_interactions(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ComponentInteractionCollector {
-        self.await_component_interaction(shard_messenger)
+        self.await_component_interaction()
     }
 
     /// Returns a builder which can be awaited to obtain a model submit interaction or stream of
     /// modal submit interactions on this message.
     #[cfg(feature = "collector")]
     pub fn await_modal_interaction(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ModalInteractionCollector {
-        ModalInteractionCollector::new(shard_messenger).message_id(self.id)
+        ModalInteractionCollector::new().message_id(self.id)
     }
 
     /// Same as [`Self::await_modal_interaction`].
     #[cfg(feature = "collector")]
     pub fn await_modal_interactions(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ModalInteractionCollector {
-        self.await_modal_interaction(shard_messenger)
+        self.await_modal_interaction()
     }
 
     /// Retrieves the message channel's category ID if the channel has one.

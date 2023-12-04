@@ -25,8 +25,6 @@ use crate::builder::{
 use crate::cache::{Cache, GuildRef};
 #[cfg(feature = "collector")]
 use crate::collector::{MessageCollector, ReactionCollector};
-#[cfg(feature = "collector")]
-use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, UserPagination};
 #[cfg(feature = "model")]

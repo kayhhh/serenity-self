@@ -104,7 +104,7 @@ impl CreateQuickModal {
         );
         builder.execute(ctx, (interaction_id, token)).await?;
 
-        let modal_interaction = ModalInteractionCollector::new(&ctx.shard)
+        let modal_interaction = ModalInteractionCollector::new(&ctx)
             .custom_ids(vec![modal_custom_id])
             .next()
             .await;

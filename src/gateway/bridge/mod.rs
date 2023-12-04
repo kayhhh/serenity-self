@@ -41,11 +41,6 @@
 //! [`Shard`]: crate::gateway::Shard
 
 mod event;
-mod shard_manager;
-mod shard_messenger;
-mod shard_queuer;
-mod shard_runner;
-mod shard_runner_message;
 #[cfg(feature = "voice")]
 mod voice;
 
@@ -53,11 +48,6 @@ use std::fmt;
 use std::time::Duration as StdDuration;
 
 pub use self::event::ShardStageUpdateEvent;
-pub use self::shard_manager::{ShardManager, ShardManagerOptions};
-pub use self::shard_messenger::ShardMessenger;
-pub use self::shard_queuer::ShardQueuer;
-pub use self::shard_runner::{ShardRunner, ShardRunnerOptions};
-pub use self::shard_runner_message::ShardRunnerMessage;
 #[cfg(feature = "voice")]
 pub use self::voice::VoiceGatewayManager;
 use super::ChunkGuildFilter;
@@ -85,17 +75,8 @@ pub enum ShardQueuerMessage {
 pub struct ShardRunnerInfo {
     /// The latency between when a heartbeat was sent and when the acknowledgement was received.
     pub latency: Option<StdDuration>,
-    /// The channel used to communicate with the shard runner, telling it what to do with regards
-    /// to its status.
-    pub runner_tx: ShardMessenger,
     /// The current connection stage of the shard.
     pub stage: ConnectionStage,
-}
-
-impl AsRef<ShardMessenger> for ShardRunnerInfo {
-    fn as_ref(&self) -> &ShardMessenger {
-        &self.runner_tx
-    }
 }
 
 /// Newtype around a callback that will be called on every incoming request. As long as this

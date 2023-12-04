@@ -91,7 +91,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn online(&self) {
-        self.shard.set_status(OnlineStatus::Online);
+        self.online();
     }
 
     /// Sets the current user as being [`Idle`]. This maintains the current activity.
@@ -120,7 +120,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn idle(&self) {
-        self.shard.set_status(OnlineStatus::Idle);
+        self.idle();
     }
 
     /// Sets the current user as being [`DoNotDisturb`]. This maintains the current activity.
@@ -149,7 +149,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn dnd(&self) {
-        self.shard.set_status(OnlineStatus::DoNotDisturb);
+        self.dnd();
     }
 
     /// Sets the current user as being [`Invisible`]. This maintains the current activity.
@@ -178,7 +178,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn invisible(&self) {
-        self.shard.set_status(OnlineStatus::Invisible);
+        self.invisible();
     }
 
     /// "Resets" the current user's presence, by setting the activity to [`None`] and the online
@@ -211,7 +211,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn reset_presence(&self) {
-        self.shard.set_presence(None, OnlineStatus::Online);
+        self.online();
     }
 
     /// Sets the current activity.
@@ -241,7 +241,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn set_activity(&self, activity: Option<ActivityData>) {
-        self.shard.set_activity(activity);
+        self.set_activity(activity);
     }
 
     /// Sets the current user's presence, providing all fields to be passed.
@@ -291,7 +291,7 @@ impl Context {
     #[cfg(feature = "gateway")]
     #[inline]
     pub fn set_presence(&self, activity: Option<ActivityData>, status: OnlineStatus) {
-        self.shard.set_presence(activity, status);
+        self.set_presence(activity, status);
     }
 }
 
@@ -338,12 +338,5 @@ impl AsRef<Arc<Cache>> for Context {
 impl AsRef<Cache> for Cache {
     fn as_ref(&self) -> &Cache {
         self
-    }
-}
-
-#[cfg(feature = "gateway")]
-impl AsRef<ShardMessenger> for Context {
-    fn as_ref(&self) -> &ShardMessenger {
-        &self.shard
     }
 }

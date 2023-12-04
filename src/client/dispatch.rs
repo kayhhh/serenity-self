@@ -345,20 +345,6 @@ fn update_cache_with_event(
         Event::Ready(mut event) => {
             update_cache!(cache, event);
 
-            #[cfg(feature = "cache")]
-            {
-                let mut shards = cache.shard_data.write();
-                if shards.connected.len() as u32 == shards.total && !shards.has_sent_shards_ready {
-                    shards.has_sent_shards_ready = true;
-                    let total = shards.total;
-                    drop(shards);
-
-                    extra_event = Some(FullEvent::ShardsReady {
-                        total_shards: total,
-                    });
-                }
-            }
-
             FullEvent::Ready {
                 data_about_bot: event.ready,
             }

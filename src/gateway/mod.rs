@@ -42,7 +42,6 @@
 
 mod bridge;
 mod error;
-mod shard;
 mod ws;
 
 use std::fmt;
@@ -53,7 +52,6 @@ use reqwest::Url;
 
 pub use self::bridge::*;
 pub use self::error::Error as GatewayError;
-pub use self::shard::Shard;
 pub use self::ws::WsClient;
 #[cfg(feature = "http")]
 use crate::internal::prelude::*;

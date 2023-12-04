@@ -15,8 +15,6 @@ use crate::builder::{Builder, CreateMessage, EditProfile};
 use crate::cache::{Cache, UserRef};
 #[cfg(feature = "collector")]
 use crate::collector::{MessageCollector, ReactionCollector};
-#[cfg(feature = "collector")]
-use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::CacheHttp;
 #[cfg(feature = "model")]

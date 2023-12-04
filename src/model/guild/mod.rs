@@ -54,8 +54,6 @@ use crate::cache::Cache;
 use crate::collector::{MessageCollector, ReactionCollector};
 #[cfg(feature = "model")]
 use crate::constants::LARGE_THRESHOLD;
-#[cfg(feature = "collector")]
-use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, UserPagination};
 #[cfg(feature = "model")]

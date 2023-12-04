@@ -4,7 +4,7 @@
 use futures::future::pending;
 use futures::{Stream, StreamExt as _};
 
-use crate::gateway::{CollectorCallback, ShardMessenger};
+use crate::gateway::CollectorCallback;
 use crate::model::prelude::*;
 
 /// Fundamental collector function. All collector types in this module are just wrappers around
@@ -31,17 +31,9 @@ use crate::model::prelude::*;
 /// # }
 /// ```
 pub fn collect<T: Send + 'static>(
-    shard: &ShardMessenger,
     extractor: impl Fn(&Event) -> Option<T> + Send + Sync + 'static,
 ) -> impl Stream<Item = T> {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-
-    // Register an event callback in the shard. It's kept alive as long as we return `true`
-    shard.add_collector(CollectorCallback(Box::new(move |event| match extractor(event) {
-        // If this event matches, we send it to the receiver stream
-        Some(item) => sender.send(item).is_ok(),
-        None => !sender.is_closed(),
-    })));
 
     // Convert the mpsc Receiver into a Stream
     futures::stream::poll_fn(move |cx| receiver.poll_recv(cx))
@@ -58,23 +50,12 @@ macro_rules! make_specific_collector {
         $( #[ $($meta)* ] )*
         #[must_use]
         pub struct $collector_type {
-            shard: ShardMessenger,
             duration: Option<std::time::Duration>,
             filter: Option<Box<dyn Fn(&$item_type) -> bool + Send + Sync>>,
             $( $filter_name: Option<$filter_type>, )*
         }
 
         impl $collector_type {
-            /// Creates a new collector without any filters configured.
-            pub fn new(shard: impl AsRef<ShardMessenger>) -> Self {
-                Self {
-                    shard: shard.as_ref().clone(),
-                    duration: None,
-                    filter: None,
-                    $( $filter_name: None, )*
-                }
-            }
-
             /// Sets a duration for how long the collector shall receive interactions.
             pub fn timeout(mut self, duration: std::time::Duration) -> Self {
                 self.duration = Some(duration);
@@ -94,50 +75,6 @@ macro_rules! make_specific_collector {
                     self
                 }
             )*
-
-            #[doc = concat!("Returns a [`Stream`] over all collected [`", stringify!($item_type), "`].")]
-            pub fn stream(self) -> impl Stream<Item = $item_type> {
-                let filters_pass = move |$extracted_item: &$item_type| {
-                    // Check each of the built-in filters (author_id, channel_id, etc.)
-                    $( if let Some($filter_name) = &self.$filter_name {
-                        if !$filter_passes {
-                            return false;
-                        }
-                    } )*
-                    // Check the callback-based filter
-                    if let Some(custom_filter) = &self.filter {
-                        if !custom_filter($extracted_item) {
-                            return false;
-                        }
-                    }
-                    true
-                };
-
-                // A future that completes once the timeout is triggered
-                let timeout = async move { match self.duration {
-                    Some(d) => tokio::time::sleep(d).await,
-                    None => pending::<()>().await,
-                } };
-
-                let stream = collect(&self.shard, move |event| match event {
-                    $extractor if filters_pass($extracted_item) => Some($extracted_item.clone()),
-                    _ => None,
-                });
-                // Need to Box::pin this, or else users have to `pin_mut!()` the stream to the stack
-                stream.take_until(Box::pin(timeout))
-            }
-
-            /// Deprecated, use [`Self::stream()`] instead.
-            #[deprecated = "use `.stream()` instead"]
-            pub fn build(self) -> impl Stream<Item = $item_type> {
-                self.stream()
-            }
-
-            #[doc = concat!("Returns the next [`", stringify!($item_type), "`] which passes the filters.")]
-            #[doc = concat!("You can also call `.await` on the [`", stringify!($collector_type), "`] directly.")]
-            pub async fn next(self) -> Option<$item_type> {
-                self.stream().next().await
-            }
         }
 
         impl std::future::IntoFuture for $collector_type {
