@@ -71,12 +71,7 @@ async fn main() {
             .delimiters(vec![", ", ","]),
     );
 
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT
-        | GatewayIntents::GUILD_MESSAGE_REACTIONS;
-
-    let mut client = Client::builder(&token, intents)
+    let mut client = Client::builder(&token)
         .event_handler(Handler)
         .framework(framework)
         .await
@@ -94,7 +89,7 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
 
     // There is a method implemented for some models to conveniently collect replies. They return a
     // builder that can be turned into a Stream, or here, where we can await a single reply
-    let collector = msg.author.await_reply(&ctx.shard).timeout(Duration::from_secs(10));
+    let collector = msg.author.await_reply(&ctx).timeout(Duration::from_secs(10));
     if let Some(answer) = collector.await {
         if answer.content.to_lowercase() == "ferris" {
             let _ = answer.reply(ctx, "That's correct!").await;

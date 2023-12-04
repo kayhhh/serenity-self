@@ -29,23 +29,13 @@ use serenity::framework::standard::{
     Reason,
     StandardFramework,
 };
-use serenity::gateway::ShardManager;
 use serenity::http::Http;
 use serenity::model::channel::Message;
-use serenity::model::gateway::{GatewayIntents, Ready};
+use serenity::model::gateway::Ready;
 use serenity::model::id::UserId;
 use serenity::model::permissions::Permissions;
 use serenity::prelude::*;
 use serenity::utils::{content_safe, ContentSafeOptions};
-
-// A container type is created for inserting into the Client's `data`, which allows for data to be
-// accessible across all events and framework commands, or anywhere else that has a copy of the
-// `data` Arc.
-struct ShardManagerContainer;
-
-impl TypeMapKey for ShardManagerContainer {
-    type Value = Arc<ShardManager>;
-}
 
 struct CommandCounter;
 
@@ -293,24 +283,16 @@ async fn main() {
             .owners(owners),
     );
 
-    // For this example to run properly, the "Presence Intent" and "Server Members Intent" options
-    // need to be enabled.
     // These are needed so the `required_permissions` macro works on the commands that need to use
     // it.
     // You will need to enable these 2 options on the bot application, and possibly wait up to 5
     // minutes.
-    let intents = GatewayIntents::all();
-    let mut client = Client::builder(&token, intents)
+    let mut client = Client::builder(&token)
         .event_handler(Handler)
         .framework(framework)
         .type_map_insert::<CommandCounter>(HashMap::default())
         .await
         .expect("Err creating client");
-
-    {
-        let mut data = client.data.write().await;
-        data.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
-    }
 
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
@@ -443,39 +425,6 @@ async fn multiply(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[command]
 async fn about(ctx: &Context, msg: &Message) -> CommandResult {
     msg.channel_id.say(&ctx.http, "This is a small test-bot! : )").await?;
-
-    Ok(())
-}
-
-#[command]
-async fn latency(ctx: &Context, msg: &Message) -> CommandResult {
-    // The shard manager is an interface for mutating, stopping, restarting, and retrieving
-    // information about shards.
-    let data = ctx.data.read().await;
-
-    let shard_manager = match data.get::<ShardManagerContainer>() {
-        Some(v) => v,
-        None => {
-            msg.reply(ctx, "There was a problem getting the shard manager").await?;
-
-            return Ok(());
-        },
-    };
-
-    let runners = shard_manager.runners.lock().await;
-
-    // Shards are backed by a "shard runner" responsible for processing events over the shard, so
-    // we'll get the information about the shard runner for the shard this command was sent over.
-    let runner = match runners.get(&ctx.shard_id) {
-        Some(runner) => runner,
-        None => {
-            msg.reply(ctx, "No shard found").await?;
-
-            return Ok(());
-        },
-    };
-
-    msg.reply(ctx, &format!("The shard latency is {:?}", runner.latency)).await?;
 
     Ok(())
 }

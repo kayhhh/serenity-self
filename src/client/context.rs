@@ -7,15 +7,11 @@ use typemap_rev::TypeMap;
 #[cfg(feature = "cache")]
 pub use crate::cache::Cache;
 use crate::gateway::ActivityData;
-#[cfg(feature = "gateway")]
-use crate::gateway::{ShardMessenger, ShardRunner};
 use crate::http::Http;
 use crate::model::prelude::*;
 
 /// The context is a general utility struct provided on event dispatches, which helps with dealing
-/// with the current "context" of the event dispatch. The context also acts as a general high-level
-/// interface over the associated [`Shard`] which received the event, or the low-level [`http`]
-/// module.
+/// with the current "context" of the event dispatch.
 ///
 /// The context contains "shortcuts", like for interacting with the shard. Methods like
 /// [`Self::set_activity`] will unlock the shard and perform an update for you to save a bit of
@@ -32,10 +28,6 @@ pub struct Context {
     ///
     /// [`Client::data`]: super::Client::data
     pub data: Arc<RwLock<TypeMap>>,
-    /// The messenger to communicate with the shard runner.
-    pub shard: ShardMessenger,
-    /// The ID of the shard this context is related to.
-    pub shard_id: ShardId,
     pub http: Arc<Http>,
     #[cfg(feature = "cache")]
     pub cache: Arc<Cache>,
@@ -45,8 +37,6 @@ pub struct Context {
 impl fmt::Debug for Context {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Context")
-            .field("shard", &self.shard)
-            .field("shard_id", &self.shard_id)
             .finish_non_exhaustive()
     }
 }
@@ -56,14 +46,10 @@ impl Context {
     #[cfg(feature = "gateway")]
     pub(crate) fn new(
         data: Arc<RwLock<TypeMap>>,
-        runner: &ShardRunner,
-        shard_id: ShardId,
         http: Arc<Http>,
         #[cfg(feature = "cache")] cache: Arc<Cache>,
     ) -> Context {
         Context {
-            shard: ShardMessenger::new(runner),
-            shard_id,
             data,
             http,
             #[cfg(feature = "cache")]
@@ -72,9 +58,8 @@ impl Context {
     }
 
     #[cfg(all(not(feature = "cache"), not(feature = "gateway")))]
-    pub fn easy(data: Arc<RwLock<TypeMap>>, shard_id: u32, http: Arc<Http>) -> Context {
+    pub fn easy(data: Arc<RwLock<TypeMap>>, http: Arc<Http>) -> Context {
         Context {
-            shard_id,
             data,
             http,
         }

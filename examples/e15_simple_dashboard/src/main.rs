@@ -411,20 +411,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         command_usage_values: Mutex::new(command_usage_values),
     });
 
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(token, intents)
+    let mut client = Client::builder(token)
         .event_handler(Handler)
         .framework(framework)
         .type_map_insert::<RillRateComponents>(components)
         .await?;
-
-    {
-        let mut data = client.data.write().await;
-
-        data.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
-    }
 
     client.start().await?;
 

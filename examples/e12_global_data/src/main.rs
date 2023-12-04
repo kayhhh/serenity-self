@@ -110,10 +110,7 @@ async fn main() {
     let framework = StandardFramework::new().before(before).group(&GENERAL_GROUP);
     framework.configure(Configuration::new().with_whitespace(true).prefix("~"));
 
-    let intents = GatewayIntents::GUILD_MESSAGES
-        | GatewayIntents::DIRECT_MESSAGES
-        | GatewayIntents::MESSAGE_CONTENT;
-    let mut client = Client::builder(&token, intents)
+    let mut client = Client::builder(&token)
         .event_handler(Handler)
         .framework(framework)
         .await

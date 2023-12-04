@@ -32,7 +32,6 @@ use crate::json::from_str;
 use crate::json::to_string;
 #[cfg(feature = "client")]
 use crate::model::event::GatewayEvent;
-use crate::model::gateway::{GatewayIntents, ShardInfo};
 use crate::model::id::{GuildId, UserId};
 #[cfg(feature = "client")]
 use crate::Error;
@@ -74,8 +73,6 @@ enum WebSocketMessageData<'a> {
         compress: bool,
         token: &'a str,
         large_threshold: u8,
-        shard: &'a ShardInfo,
-        intents: GatewayIntents,
         properties: IdentifyProperties,
         presence: PresenceUpdateMessage<'a>,
     },
@@ -184,13 +181,12 @@ impl WsClient {
     pub async fn send_chunk_guild(
         &mut self,
         guild_id: GuildId,
-        shard_info: &ShardInfo,
         limit: Option<u16>,
         presences: bool,
         filter: ChunkGuildFilter,
         nonce: Option<&str>,
     ) -> Result<()> {
-        debug!("[{:?}] Requesting member chunks", shard_info);
+        debug!("Requesting member chunks");
 
         let (query, user_ids) = match filter {
             ChunkGuildFilter::None => (Some(String::new()), None),
@@ -213,8 +209,8 @@ impl WsClient {
     }
 
     #[instrument(skip(self))]
-    pub async fn send_heartbeat(&mut self, shard_info: &ShardInfo, seq: Option<u64>) -> Result<()> {
-        trace!("[{:?}] Sending heartbeat d: {:?}", shard_info, seq);
+    pub async fn send_heartbeat(&mut self, seq: Option<u64>) -> Result<()> {
+        trace!("Sending heartbeat d: {:?}", seq);
 
         self.send_json(&WebSocketMessage {
             op: Opcode::Heartbeat,
@@ -226,27 +222,23 @@ impl WsClient {
     #[instrument(skip(self, token))]
     pub async fn send_identify(
         &mut self,
-        shard: &ShardInfo,
         token: &str,
-        intents: GatewayIntents,
         presence: &PresenceData,
     ) -> Result<()> {
         let activities: Vec<_> = presence.activity.iter().collect();
         let now = SystemTime::now();
 
-        debug!("[{:?}] Identifying", shard);
+        debug!("Identifying");
 
         let msg = WebSocketMessage {
             op: Opcode::Identify,
             d: WebSocketMessageData::Identify {
                 token,
-                shard,
-                intents,
                 compress: true,
                 large_threshold: constants::LARGE_THRESHOLD,
                 properties: IdentifyProperties {
-                    browser: "serenity",
-                    device: "serenity",
+                    browser: "serenity-self",
+                    device: "serenity-self",
                     os: consts::OS,
                 },
                 presence: PresenceUpdateMessage {
@@ -264,13 +256,12 @@ impl WsClient {
     #[instrument(skip(self))]
     pub async fn send_presence_update(
         &mut self,
-        shard_info: &ShardInfo,
         presence: &PresenceData,
     ) -> Result<()> {
         let activities: Vec<_> = presence.activity.iter().collect();
         let now = SystemTime::now();
 
-        debug!("[{:?}] Sending presence update", shard_info);
+        debug!("Sending presence update");
 
         self.send_json(&WebSocketMessage {
             op: Opcode::PresenceUpdate,
@@ -287,12 +278,11 @@ impl WsClient {
     #[instrument(skip(self, token))]
     pub async fn send_resume(
         &mut self,
-        shard_info: &ShardInfo,
         session_id: &str,
         seq: u64,
         token: &str,
     ) -> Result<()> {
-        debug!("[{:?}] Sending resume; seq: {}", shard_info, seq);
+        debug!("Sending resume; seq: {}", seq);
 
         self.send_json(&WebSocketMessage {
             op: Opcode::Resume,

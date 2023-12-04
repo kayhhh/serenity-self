@@ -4,7 +4,13 @@
 
 ![serenity-self logo](https://cdn.discordapp.com/avatars/282201122733686784/ba49f6aa508b303ee1fb1b084a6d5a83.png?size=256&quality=lossless&width=0&height=256)
 
-Serenity-self is a Rust library for the Discord API.
+Serenity-self is a Rust library for the Discord API with user account support.
+
+### Disclaimer:
+
+Automating user accounts is a violation of Discord's Terms of Service.
+This library serves as a proof of concept, and I cannot endorse its usage.
+Proceed at your own risk.
 
 View the [examples] on how to use serenity's API. To make a bot with slash commands or text
 commands, see the [poise](https://github.com/serenity-rs/poise) framework built on top of serenity.
@@ -104,9 +110,11 @@ library, can be found in the [`examples`] directory.
 
 Add the following to your `Cargo.toml` file:
 
+Commit `8122f98` is the latest working commit while new changes are being made.
+
 ```toml
 [dependencies]
-serenity = { git = "https://github.com/nshout/serenity-self", branch = "current" }
+serenity = { git = "https://github.com/nshout/serenity-self", branch = "current", rev = "8122f98" }
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
 ```
 
