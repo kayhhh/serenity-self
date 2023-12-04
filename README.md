@@ -230,6 +230,10 @@ If you use the `native_tls_backend` and you are not developing on macOS or Windo
 If you want a quick and easy way to host your bot, you can use [shuttle][project:shuttle],
 a Rust-native cloud development platform that allows deploying Serenity bots for free.
 
+# Projects using Serenity-self
+
+- [Continuum](https://github.com/suffixarchive/continuum-selfbot): A Discord selfbot made in the Rust programming language.
+
 # Projects extending Serenity
 
 - [lavalink-rs][project:lavalink-rs]: An interface to [Lavalink][repo:lavalink] and [Andesite][repo:andesite], an audio sending node based on [Lavaplayer][repo:lavaplayer]
