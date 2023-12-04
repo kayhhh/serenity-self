@@ -103,16 +103,4 @@ pub mod close_codes {
     ///
     /// Can reconnect.
     pub const SESSION_TIMEOUT: u16 = 4009;
-    /// An invalid shard when identifying was sent.
-    ///
-    /// Cannot reconnect.
-    pub const INVALID_SHARD: u16 = 4010;
-    /// The session would have handled too many guilds.
-    ///
-    /// Cannot reconnect.
-    pub const SHARDING_REQUIRED: u16 = 4011;
-    /// Undocumented gateway intents have been provided.
-    pub const INVALID_GATEWAY_INTENTS: u16 = 4013;
-    /// Disallowed gateway intents have been provided.
-    pub const DISALLOWED_GATEWAY_INTENTS: u16 = 4014;
 }

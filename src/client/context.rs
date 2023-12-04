@@ -13,14 +13,9 @@ use crate::model::prelude::*;
 /// The context is a general utility struct provided on event dispatches, which helps with dealing
 /// with the current "context" of the event dispatch.
 ///
-/// The context contains "shortcuts", like for interacting with the shard. Methods like
-/// [`Self::set_activity`] will unlock the shard and perform an update for you to save a bit of
-/// work.
-///
 /// A context will only live for the event it was dispatched for. After the event handler finished,
 /// it is destroyed and will not be re-used.
 ///
-/// [`Shard`]: crate::gateway::Shard
 /// [`http`]: crate::http
 #[derive(Clone)]
 pub struct Context {
@@ -69,7 +64,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Set the current user to being online on the shard:
+    /// Set the current user to being online:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -98,7 +93,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Set the current user to being idle on the shard:
+    /// Set the current user to being idle:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -127,7 +122,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Set the current user to being Do Not Disturb on the shard:
+    /// Set the current user to being Do Not Disturb:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -156,7 +151,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Set the current user to being invisible on the shard:
+    /// Set the current user to being invisible:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -188,7 +183,7 @@ impl Context {
     ///
     /// # Examples
     ///
-    /// Reset the current user's presence on the shard:
+    /// Reset the current user's presence:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;

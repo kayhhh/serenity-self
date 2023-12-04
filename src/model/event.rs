@@ -277,14 +277,14 @@ pub struct GuildMembersChunkEvent {
     pub chunk_index: u32,
     /// Total number of expected chunks for this response.
     pub chunk_count: u32,
-    /// When passing an invalid ID to [`crate::gateway::ShardRunnerMessage::ChunkGuild`], it will
+    /// When passing an invalid ID, it will
     /// be returned here.
     #[serde(default)]
     pub not_found: Vec<GenericId>,
-    /// When passing true to [`crate::gateway::ShardRunnerMessage::ChunkGuild`], presences of the
+    /// When passing true, presences of the
     /// returned members will be here.
     pub presences: Option<Vec<Presence>>,
-    /// Nonce used in the [`crate::gateway::ShardRunnerMessage::ChunkGuild`] request.
+    /// Nonce used in request.
     pub nonce: Option<String>,
 }
 

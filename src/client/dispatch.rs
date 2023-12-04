@@ -87,8 +87,8 @@ pub(crate) fn dispatch_model(
 
 /// Updates the cache with the incoming event data and builds the full event data out of it.
 ///
-/// Can return a secondary [`FullEvent`] for "virtual" events like [`FullEvent::CacheReady`] or
-/// [`FullEvent::ShardsReady`]. Secondary events are traditionally dispatched first.
+/// Can return a secondary [`FullEvent`] for "virtual" events like [`FullEvent::CacheReady`]
+/// Secondary events are traditionally dispatched first.
 ///
 /// Can return `None` if an event is unknown.
 #[cfg_attr(not(feature = "cache"), allow(unused_mut))]

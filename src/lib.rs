@@ -9,10 +9,6 @@
 //! [`Event::MessageCreate`] is received. Each handler is given a [`Context`], giving information
 //! about the event. See the [client's module-level documentation].
 //!
-//! The [`Shard`] is transparently handled by the library, removing unnecessary complexity. Sharded
-//! connections are automatically handled for you. See the [gateway's documentation][gateway docs]
-//! for more information.
-//!
 //! A [`Cache`] is also provided for you. This will be updated automatically for you as data is
 //! received from the Discord API via events. When calling a method on a [`Context`], the cache
 //! will first be searched for relevant data to avoid unnecessary HTTP requests to the Discord API.
@@ -41,7 +37,6 @@
 //! [`EventHandler::message`]: crate::client::EventHandler::message
 //! [`Event`]: crate::model::event::Event
 //! [`Event::MessageCreate`]: crate::model::event::Event::MessageCreate
-//! [`Shard`]: crate::gateway::Shard
 //! [`examples`]: https://github.com/serenity-rs/serenity/blob/current/examples
 //! [cache docs]: crate::cache
 //! [client's module-level documentation]: crate::client
@@ -81,7 +76,7 @@
     clippy::missing_panics_doc, // clippy::unwrap_used
 )]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-#![type_length_limit = "3294819"] // needed so ShardRunner::run compiles with instrument.
+#![type_length_limit = "3294819"]
 
 #[macro_use]
 extern crate serde;

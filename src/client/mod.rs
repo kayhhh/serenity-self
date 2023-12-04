@@ -1,5 +1,5 @@
 //! The Client contains information about a single bot's token, as well as event handlers.
-//! Dispatching events to configured handlers and starting the shards' connections are handled
+//! Dispatching events to configured handlers and starting the connections are handled
 //! directly via the client. In addition, the `http` module and `Cache` are also automatically
 //! handled by the Client module for you.
 //!
@@ -339,8 +339,7 @@ impl IntoFuture for ClientBuilder {
 }
 
 /// The Client is the way to be able to start sending authenticated requests over the REST API, as
-/// well as initializing a WebSocket connection through [`Shard`]s. Refer to the [documentation on
-/// using sharding][sharding docs] for more information.
+/// well as initializing a WebSocket connection.
 ///
 /// # Event Handlers
 ///
@@ -380,9 +379,7 @@ impl IntoFuture for ClientBuilder {
 /// # }
 /// ```
 ///
-/// [`Shard`]: crate::gateway::Shard
 /// [`Event::MessageCreate`]: crate::model::event::Event::MessageCreate
-/// [sharding docs]: crate::gateway#sharding
 #[cfg(feature = "gateway")]
 pub struct Client {
     /// A TypeMap which requires types to be Send + Sync. This is a map that can be safely shared
@@ -478,15 +475,15 @@ pub struct Client {
     pub data: Arc<RwLock<TypeMap>>,
     /// The voice manager for the client.
     ///
-    /// This is an ergonomic structure for interfacing over shards' voice
+    /// This is an ergonomic structure for interfacing over voice
     /// connections.
     #[cfg(feature = "voice")]
     pub voice_manager: Option<Arc<dyn VoiceGatewayManager + 'static>>,
-    /// URL that the client's shards will use to connect to the gateway.
+    /// URL that the client's will use to connect to the gateway.
     ///
     /// This is likely not important for production usage and is, at best, used for debugging.
     ///
-    /// This is wrapped in an `Arc<Mutex<T>>` so all shards will have an updated value available.
+    /// This is wrapped in an `Arc<Mutex<T>>` so it will have an updated value available.
     pub ws_url: Arc<Mutex<String>>,
     /// The cache for the client.
     #[cfg(feature = "cache")]
@@ -505,16 +502,9 @@ impl Client {
     /// This will start receiving events in a loop and start dispatching the events to your
     /// registered handlers.
     ///
-    /// Note that this should be used only for users and for bots which are in less than 2500
-    /// guilds. If you have a reason for sharding and/or are in more than 2500 guilds, use one of
-    /// these depending on your use case:
-    ///
-    /// Refer to the [Gateway documentation][gateway docs] for more information on effectively
-    /// using sharding.
-    ///
     /// # Examples
     ///
-    /// Starting a Client with only 1 shard, out of 1 total:
+    /// Starting a Client:
     ///
     /// ```rust,no_run
     /// # use std::error::Error;
@@ -531,23 +521,14 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    ///
-    /// [gateway docs]: crate::gateway#sharding
     #[instrument(skip(self))]
     pub async fn start(&mut self) -> Result<()> {
         self.start_connection().await
     }
-
-    /// Shard data layout is:
-    /// 0: first shard number to initialize
-    /// 1: shard number to initialize up to and including
-    /// 2: total number of shards the bot is sharding for
-    ///
-    /// Not all shards need to be initialized in this process.
-    ///
+    
     /// # Errors
     ///
-    /// Returns a [`ClientError::Shutdown`] when all shards have shutdown due to an error.
+    /// Returns a [`ClientError::Shutdown`] when the client shuts down due to an error.
     #[instrument(skip(self))]
     async fn start_connection(
         &mut self,

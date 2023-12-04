@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 
 use super::context::Context;
-use crate::gateway::ShardStageUpdateEvent;
 use crate::http::RatelimitInfo;
 use crate::model::application::{CommandPermissions, Interaction};
 use crate::model::guild::audit_log::AuditLogEntry;
@@ -114,10 +113,6 @@ event_handler! {
     /// Provides the cached guilds' ids.
     #[cfg(feature = "cache")]
     CacheReady { guilds: Vec<GuildId> } => async fn cache_ready(&self, ctx: Context);
-
-    /// Dispatched when every shard has received a Ready event
-    #[cfg(feature = "cache")]
-    ShardsReady { total_shards: u32 } => async fn shards_ready(&self, ctx: Context);
 
     /// Dispatched when a channel is created.
     ///
@@ -321,11 +316,6 @@ event_handler! {
 
     /// Dispatched upon reconnection.
     Resume { event: ResumedEvent } => async fn resume(&self, ctx: Context);
-
-    /// Dispatched when a shard's connection stage is updated
-    ///
-    /// Provides the context of the shard and the event information about the update.
-    ShardStageUpdate { event: ShardStageUpdateEvent } => async fn shard_stage_update(&self, ctx: Context);
 
     /// Dispatched when a user starts typing.
     TypingStart { event: TypingStartEvent } => async fn typing_start(&self, ctx: Context);

@@ -10,9 +10,6 @@ use super::utils::*;
 
 /// A representation of the data retrieved from the bot gateway endpoint.
 ///
-/// This is different from the [`Gateway`], as this includes the number of shards that Discord
-/// recommends to use for a bot user.
-///
 /// This is only applicable to bot users.
 ///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway#get-gateway-bot-json-response).
@@ -21,8 +18,6 @@ use super::utils::*;
 pub struct BotGateway {
     /// The gateway to connect to.
     pub url: String,
-    /// The number of shards that is recommended to be used by the current bot user.
-    pub shards: u32,
     /// Information describing how many gateway sessions you can initiate within a ratelimit
     /// period.
     pub session_start_limit: SessionStartLimit,
@@ -344,8 +339,6 @@ pub struct Ready {
     pub session_id: String,
     /// Gateway URL for resuming connections
     pub resume_gateway_url: String,
-    /// Shard information associated with this session, if sent when identifying
-    pub shard: Option<ShardInfo>,
     /// Contains id and flags
     pub application: PartialCurrentApplicationInfo,
 }
@@ -364,41 +357,6 @@ pub struct SessionStartLimit {
     pub total: u64,
     /// The number of identify requests allowed per 5 seconds.
     pub max_concurrency: u64,
-}
-
-#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
-#[derive(Clone, Copy, Debug)]
-pub struct ShardInfo {
-    pub id: ShardId,
-    pub total: u32,
-}
-
-impl ShardInfo {
-    #[must_use]
-    pub(crate) fn new(id: ShardId, total: u32) -> Self {
-        Self {
-            id,
-            total,
-        }
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ShardInfo {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> StdResult<Self, D::Error> {
-        <(u32, u32)>::deserialize(deserializer).map(|(id, total)| ShardInfo {
-            id: ShardId(id),
-            total,
-        })
-    }
-}
-
-impl serde::Serialize for ShardInfo {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> StdResult<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(Some(2))?;
-        seq.serialize_element(&self.id.0)?;
-        seq.serialize_element(&self.total)?;
-        seq.end()
-    }
 }
 
 /// Timestamps of when a user started and/or is ending their activity.

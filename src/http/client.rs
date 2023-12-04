@@ -562,8 +562,7 @@ impl Http {
 
     /// Creates a guild with the data provided.
     ///
-    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received
-    /// over a [`Shard`], if at least one is running.
+    /// Only a [`PartialGuild`] will be immediately returned, and a full [`Guild`] will be received.
     ///
     /// **Note**: This endpoint is currently limited to 10 active guilds. The limits are raised for
     /// whitelisted [GameBridge] applications. See the [documentation on this endpoint] for more
@@ -588,7 +587,6 @@ impl Http {
     /// # }
     /// ```
     ///
-    /// [`Shard`]: crate::gateway::Shard
     /// [GameBridge]: https://discord.com/developers/docs/topics/gamebridge
     /// [documentation on this endpoint]:
     /// https://discord.com/developers/docs/resources/guild#create-guild

@@ -15,10 +15,9 @@ use crate::model::prelude::*;
 /// # use std::time::Duration;
 /// # use futures::StreamExt as _;
 /// # use serenity::model::prelude::Event;
-/// # use serenity::gateway::ShardMessenger;
 /// # use serenity::collector::collect;
-/// # async fn _example(shard: &ShardMessenger) {
-/// let stream = collect(shard, |event| match event {
+/// # async fn _example() {
+/// let stream = collect(|event| match event {
 ///     Event::ReactionRemove(event) => Some(event.reaction.clone()),
 ///     _ => None,
 /// });
