@@ -1,7 +1,4 @@
 //! All the events this library handles.
-//!
-//! Every event includes the gateway intent required to receive it, as well as a link to the
-//! Discord documentation for the event.
 
 // Just for MessageUpdateEvent (for some reason the #[allow] doesn't work when placed directly)
 #![allow(clippy::option_option)]
@@ -19,8 +16,6 @@ use crate::model::application::{CommandPermissions, Interaction};
 use crate::model::guild::audit_log::AuditLogEntry;
 use crate::model::guild::automod::{ActionExecution, Rule};
 
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#application-command-permissions-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -30,8 +25,6 @@ pub struct CommandPermissionsUpdateEvent {
     pub permission: CommandPermissions,
 }
 
-/// Requires [`GatewayIntents::AUTO_MODERATION_CONFIGURATION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#auto-moderation-rule-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -41,8 +34,6 @@ pub struct AutoModRuleCreateEvent {
     pub rule: Rule,
 }
 
-/// Requires [`GatewayIntents::AUTO_MODERATION_CONFIGURATION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#auto-moderation-rule-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,8 +43,6 @@ pub struct AutoModRuleUpdateEvent {
     pub rule: Rule,
 }
 
-/// Requires [`GatewayIntents::AUTO_MODERATION_CONFIGURATION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#auto-moderation-rule-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,8 +52,6 @@ pub struct AutoModRuleDeleteEvent {
     pub rule: Rule,
 }
 
-/// Requires [`GatewayIntents::AUTO_MODERATION_EXECUTION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#auto-moderation-action-execution).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -79,8 +66,6 @@ pub struct AutoModActionExecutionEvent {
 /// This is fired when:
 /// - A [`Channel`] is created in a [`Guild`]
 ///
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#channel-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -91,8 +76,6 @@ pub struct ChannelCreateEvent {
     pub channel: GuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#channel-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -102,8 +85,6 @@ pub struct ChannelDeleteEvent {
     pub channel: GuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILDS`] or [`GatewayIntents::DIRECT_MESSAGES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#channel-pins-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -114,8 +95,6 @@ pub struct ChannelPinsUpdateEvent {
     pub last_pin_timestamp: Option<Timestamp>,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#channel-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -125,8 +104,6 @@ pub struct ChannelUpdateEvent {
     pub channel: GuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILD_MODERATION`] and [`Permissions::VIEW_AUDIT_LOG`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-audit-log-entry-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -137,8 +114,6 @@ pub struct GuildAuditLogEntryCreateEvent {
     pub entry: AuditLogEntry,
 }
 
-/// Requires [`GatewayIntents::GUILD_MODERATION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-ban-add).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -148,8 +123,6 @@ pub struct GuildBanAddEvent {
     pub user: User,
 }
 
-/// Requires [`GatewayIntents::GUILD_MODERATION`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-ban-remove).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -159,8 +132,6 @@ pub struct GuildBanRemoveEvent {
     pub user: User,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Serialize)]
@@ -183,8 +154,6 @@ impl<'de> Deserialize<'de> for GuildCreateEvent {
     }
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -194,8 +163,6 @@ pub struct GuildDeleteEvent {
     pub guild: UnavailableGuild,
 }
 
-/// Requires [`GatewayIntents::GUILD_EMOJIS_AND_STICKERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-emojis-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -206,8 +173,6 @@ pub struct GuildEmojisUpdateEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires [`GatewayIntents::GUILD_INTEGRATIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-integrations-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -216,8 +181,6 @@ pub struct GuildIntegrationsUpdateEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires [`GatewayIntents::GUILD_MEMBERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-member-add).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -227,8 +190,6 @@ pub struct GuildMemberAddEvent {
     pub member: Member,
 }
 
-/// Requires [`GatewayIntents::GUILD_MEMBERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-member-remove).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -238,8 +199,6 @@ pub struct GuildMemberRemoveEvent {
     pub user: User,
 }
 
-/// Requires [`GatewayIntents::GUILD_MEMBERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-member-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -261,8 +220,6 @@ pub struct GuildMemberUpdateEvent {
     pub communication_disabled_until: Option<Timestamp>,
 }
 
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-members-chunk).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -311,8 +268,6 @@ struct RoleEventHelper {
     role: Role,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-role-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Serialize)]
@@ -332,8 +287,6 @@ impl<'de> Deserialize<'de> for GuildRoleCreateEvent {
     }
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-role-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -343,8 +296,6 @@ pub struct GuildRoleDeleteEvent {
     pub role_id: RoleId,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-role-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Serialize)]
@@ -364,8 +315,6 @@ impl<'de> Deserialize<'de> for GuildRoleUpdateEvent {
     }
 }
 
-/// Requires [`GatewayIntents::GUILD_EMOJIS_AND_STICKERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-stickers-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -376,8 +325,6 @@ pub struct GuildStickersUpdateEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires [`GatewayIntents::GUILD_INVITES`] and [`Permissions::MANAGE_CHANNELS´] permission.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#invite-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -410,8 +357,6 @@ pub struct InviteCreateEvent {
     pub uses: u64,
 }
 
-/// Requires [`GatewayIntents::GUILD_INVITES`] and [`Permissions::MANAGE_CHANNELS´] permission.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#invite-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -422,8 +367,6 @@ pub struct InviteDeleteEvent {
     pub code: String,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -434,8 +377,6 @@ pub struct GuildUpdateEvent {
     pub guild: PartialGuild,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGES`] or [`GatewayIntents::DIRECT_MESSAGES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -445,8 +386,6 @@ pub struct MessageCreateEvent {
     pub message: Message,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGES`] or [`GatewayIntents::DIRECT_MESSAGES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-delete-bulk).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -457,8 +396,6 @@ pub struct MessageDeleteBulkEvent {
     pub ids: Vec<MessageId>,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGES`] or [`GatewayIntents::DIRECT_MESSAGES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -480,8 +417,6 @@ where
     Deserialize::deserialize(deserializer).map(Some)
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGES`].
-///
 /// Contains identical fields to [`Message`], except everything but `id` and `channel_id` are
 /// optional. Even fields that cannot change in a message update event are included, because Discord
 /// may include them anyways, independent from whether they have actually changed (like
@@ -614,8 +549,6 @@ impl MessageUpdateEvent {
     }
 }
 
-/// Requires [`GatewayIntents::GUILD_PRESENCES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#presence-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -634,9 +567,6 @@ pub struct PresencesReplaceEvent {
     pub presences: Vec<Presence>,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGE_REACTIONS`] or
-/// [`GatewayIntents::DIRECT_MESSAGE_REACTIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-reaction-add).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -646,9 +576,6 @@ pub struct ReactionAddEvent {
     pub reaction: Reaction,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGE_REACTIONS`] or
-/// [`GatewayIntents::DIRECT_MESSAGE_REACTIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-reaction-remove).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -661,9 +588,6 @@ pub struct ReactionRemoveEvent {
     pub reaction: Reaction,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGE_REACTIONS`] or
-/// [`GatewayIntents::DIRECT_MESSAGE_REACTIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-reaction-remove-all).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -674,9 +598,6 @@ pub struct ReactionRemoveAllEvent {
     pub guild_id: Option<GuildId>,
 }
 
-/// Requires [`GatewayIntents::GUILD_MESSAGE_REACTIONS`] or
-/// [`GatewayIntents::DIRECT_MESSAGE_REACTIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#message-reaction-remove-emoji-message-reaction-remove-emoji-event-fields).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -688,8 +609,6 @@ pub struct ReactionRemoveEmojiEvent {
 
 /// The "Ready" event, containing initial ready cache
 ///
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#ready).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -699,16 +618,12 @@ pub struct ReadyEvent {
     pub ready: Ready,
 }
 
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#resumed).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct ResumedEvent {}
 
-/// Requires [`GatewayIntents::GUILD_MESSAGE_TYPING`] or [`GatewayIntents::DIRECT_MESSAGE_TYPING`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#typing-start).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -738,8 +653,6 @@ pub struct UnknownEvent {
 
 /// Sent when properties about the current bot's user change.
 ///
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#user-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -749,8 +662,6 @@ pub struct UserUpdateEvent {
     pub current_user: CurrentUser,
 }
 
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#voice-server-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -761,8 +672,6 @@ pub struct VoiceServerUpdateEvent {
     pub endpoint: Option<String>,
 }
 
-/// Requires [`GatewayIntents::GUILD_VOICE_STATES`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#voice-state-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -772,8 +681,6 @@ pub struct VoiceStateUpdateEvent {
     pub voice_state: VoiceState,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Incomplete documentation](https://github.com/discord/discord-api-docs/pull/6398)
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -784,8 +691,6 @@ pub struct VoiceChannelStatusUpdateEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires [`GatewayIntents::GUILD_WEBHOOKS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#webhooks-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -795,8 +700,6 @@ pub struct WebhookUpdateEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires no gateway intents.
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#interaction-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -806,8 +709,6 @@ pub struct InteractionCreateEvent {
     pub interaction: Interaction,
 }
 
-/// Requires [`GatewayIntents::GUILD_INTEGRATIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#integration-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -817,8 +718,6 @@ pub struct IntegrationCreateEvent {
     pub integration: Integration,
 }
 
-/// Requires [`GatewayIntents::GUILD_INTEGRATIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#integration-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -828,8 +727,6 @@ pub struct IntegrationUpdateEvent {
     pub integration: Integration,
 }
 
-/// Requires [`GatewayIntents::GUILD_INTEGRATIONS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#integration-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -840,8 +737,6 @@ pub struct IntegrationDeleteEvent {
     pub application_id: Option<ApplicationId>,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#stage-instance-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -851,8 +746,6 @@ pub struct StageInstanceCreateEvent {
     pub stage_instance: StageInstance,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#stage-instance-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -862,8 +755,6 @@ pub struct StageInstanceUpdateEvent {
     pub stage_instance: StageInstance,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#stage-instance-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -873,8 +764,6 @@ pub struct StageInstanceDeleteEvent {
     pub stage_instance: StageInstance,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -884,8 +773,6 @@ pub struct ThreadCreateEvent {
     pub thread: GuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -895,8 +782,6 @@ pub struct ThreadUpdateEvent {
     pub thread: GuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -906,8 +791,6 @@ pub struct ThreadDeleteEvent {
     pub thread: PartialGuildChannel,
 }
 
-/// Requires [`GatewayIntents::GUILDS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-list-sync).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -926,9 +809,6 @@ pub struct ThreadListSyncEvent {
     pub members: Vec<ThreadMember>,
 }
 
-/// Requires [`GatewayIntents::GUILDS`], and, to receive this event for other users,
-/// [`GatewayIntents::GUILD_MEMBERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-member-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -938,8 +818,6 @@ pub struct ThreadMemberUpdateEvent {
     pub member: ThreadMember,
 }
 
-/// Requires [`GatewayIntents::GUILD_MEMBERS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#thread-members-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -962,8 +840,6 @@ pub struct ThreadMembersUpdateEvent {
     pub removed_member_ids: Vec<UserId>,
 }
 
-/// Requires [`GatewayIntents::GUILD_SCHEDULED_EVENTS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-scheduled-event-create).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -973,8 +849,6 @@ pub struct GuildScheduledEventCreateEvent {
     pub event: ScheduledEvent,
 }
 
-/// Requires [`GatewayIntents::GUILD_SCHEDULED_EVENTS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-scheduled-event-update).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -984,8 +858,6 @@ pub struct GuildScheduledEventUpdateEvent {
     pub event: ScheduledEvent,
 }
 
-/// Requires [`GatewayIntents::GUILD_SCHEDULED_EVENTS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-scheduled-event-delete).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -995,8 +867,6 @@ pub struct GuildScheduledEventDeleteEvent {
     pub event: ScheduledEvent,
 }
 
-/// Requires [`GatewayIntents::GUILD_SCHEDULED_EVENTS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-scheduled-event-user-add).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1008,8 +878,6 @@ pub struct GuildScheduledEventUserAddEvent {
     pub guild_id: GuildId,
 }
 
-/// Requires [`GatewayIntents::GUILD_SCHEDULED_EVENTS`].
-///
 /// [Discord docs](https://discord.com/developers/docs/topics/gateway-events#guild-scheduled-event-user-remove).
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Clone, Debug, Deserialize, Serialize)]

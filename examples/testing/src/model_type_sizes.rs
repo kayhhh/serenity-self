@@ -59,7 +59,6 @@ pub fn print_ranking() {
         ("EmojiIdentifierParseError", std::mem::size_of::<EmojiIdentifierParseError>()),
         ("FollowedChannel", std::mem::size_of::<FollowedChannel>()),
         ("Gateway", std::mem::size_of::<Gateway>()),
-        ("GatewayIntents", std::mem::size_of::<GatewayIntents>()),
         ("GenericId", std::mem::size_of::<GenericId>()),
         ("Guild", std::mem::size_of::<Guild>()),
         ("GuildBanAddEvent", std::mem::size_of::<GuildBanAddEvent>()),

@@ -191,27 +191,18 @@ event_handler! {
     /// Dispatched when a user joins a guild.
     ///
     /// Provides the guild's id and the user's member data.
-    ///
-    /// Note: This event will not trigger unless the "guild members" privileged intent is enabled
-    /// on the bot application page.
     GuildMemberAddition { new_member: Member } => async fn guild_member_addition(&self, ctx: Context);
 
     /// Dispatched when a user's membership ends by leaving, getting kicked, or being banned.
     ///
     /// Provides the guild's id, the user's data, and the user's member data if cache feature is
     /// enabled and the data is available.
-    ///
-    /// Note: This event will not trigger unless the "guild members" privileged intent is enabled
-    /// on the bot application page.
     GuildMemberRemoval { guild_id: GuildId, user: User, member_data_if_available: Option<Member> } => async fn guild_member_removal(&self, ctx: Context);
 
     /// Dispatched when a member is updated (e.g their nickname is updated).
     ///
     /// Provides the member's old and new data (if cache feature is enabled and data is available)
     /// and the new raw data about updated fields.
-    ///
-    /// Note: This event will not trigger unless the "guild members" privileged intent is enabled
-    /// on the bot application page.
     GuildMemberUpdate { old_if_available: Option<Member>, new: Option<Member>, event: GuildMemberUpdateEvent } => async fn guild_member_update(&self, ctx: Context);
 
     /// Dispatched when the data for offline members was requested.
@@ -304,9 +295,6 @@ event_handler! {
     /// Dispatched when a user's presence is updated (e.g off -> on).
     ///
     /// Provides the presence's new data.
-    ///
-    /// Note: This event will not trigger unless the "guild presences" privileged intent is enabled
-    /// on the bot application page.
     PresenceUpdate { new_data: Presence } => async fn presence_update(&self, ctx: Context);
 
     /// Dispatched upon startup.
@@ -332,8 +320,7 @@ event_handler! {
 
     /// Dispatched when a user joins, leaves or moves to a voice channel.
     ///
-    /// Provides the guild's id (if available) and the old state (if cache feature is enabled and
-    /// [`GatewayIntents::GUILDS`] is enabled) and the new state of the guild's voice channels.
+    /// Provides the guild's id (if available) and the old state and the new state of the guild's voice channels.
     VoiceStateUpdate { old: Option<VoiceState>, new: VoiceState } => async fn voice_state_update(&self, ctx: Context);
 
     /// Dispatched when a voice channel's status is updated.
@@ -409,13 +396,11 @@ event_handler! {
     ThreadMemberUpdate { thread_member: ThreadMember } => async fn thread_member_update(&self, ctx: Context);
 
     /// Dispatched when anyone is added to or removed from a thread. If the current user does not
-    /// have the [`GatewayIntents::GUILDS`], then this event will only be sent if the current user
+    /// have, then this event will only be sent if the current user
     /// was added to or removed from the thread.
     ///
     /// Provides the added/removed members, the approximate member count of members in the thread,
     /// the thread Id and its guild Id.
-    ///
-    /// [`GatewayIntents::GUILDS`]: crate::model::gateway::GatewayIntents::GUILDS
     ThreadMembersUpdate { thread_members_update: ThreadMembersUpdateEvent } => async fn thread_members_update(&self, ctx: Context);
 
     /// Dispatched when a scheduled event is created.

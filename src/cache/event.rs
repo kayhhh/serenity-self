@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use super::{Cache, CacheUpdate};
 use crate::model::channel::{GuildChannel, Message};
 use crate::model::event::{

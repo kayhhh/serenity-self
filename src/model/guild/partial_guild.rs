@@ -1387,46 +1387,6 @@ impl PartialGuild {
         self.id.prune_count(http, days).await
     }
 
-    /// Returns the Id of the shard associated with the guild.
-    ///
-    /// When the cache is enabled this will automatically retrieve the total number of shards.
-    ///
-    /// **Note**: When the cache is enabled, this function unlocks the cache to retrieve the total
-    /// number of shards in use. If you already have the total, consider using [`utils::shard_id`].
-    ///
-    /// [`utils::shard_id`]: crate::utils::shard_id
-    #[cfg(all(feature = "cache", feature = "utils"))]
-    #[inline]
-    #[must_use]
-    pub fn shard_id(&self, cache: impl AsRef<Cache>) -> u32 {
-        self.id.shard_id(cache)
-    }
-
-    /// Returns the Id of the shard associated with the guild.
-    ///
-    /// When the cache is enabled this will automatically retrieve the total number of shards.
-    ///
-    /// When the cache is not enabled, the total number of shards being used will need to be
-    /// passed.
-    ///
-    /// # Examples
-    ///
-    /// Retrieve the Id of the shard for a guild with Id `81384788765712384`, using 17 shards:
-    ///
-    /// ```rust,ignore
-    /// use serenity::utils;
-    ///
-    /// // assumes a `guild` has already been bound
-    ///
-    /// assert_eq!(guild.shard_id(17), 7);
-    /// ```
-    #[cfg(all(feature = "utils", not(feature = "cache")))]
-    #[inline]
-    #[must_use]
-    pub fn shard_id(&self, shard_count: u32) -> u32 {
-        self.id.shard_id(shard_count)
-    }
-
     /// Returns the formatted URL of the guild's splash image, if one exists.
     #[inline]
     #[must_use]
@@ -1534,30 +1494,29 @@ impl PartialGuild {
     /// Returns a builder which can be awaited to obtain a message or stream of messages in this
     /// guild.
     #[cfg(feature = "collector")]
-    pub fn await_reply(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
-        MessageCollector::new(shard_messenger).guild_id(self.id)
+    pub fn await_reply(&self) -> MessageCollector {
+        MessageCollector::new().guild_id(self.id)
     }
 
     /// Same as [`Self::await_reply`].
     #[cfg(feature = "collector")]
-    pub fn await_replies(&self, shard_messenger: impl AsRef<ShardMessenger>) -> MessageCollector {
-        self.await_reply(shard_messenger)
+    pub fn await_replies(&self) -> MessageCollector {
+        self.await_reply()
     }
 
     /// Returns a builder which can be awaited to obtain a message or stream of reactions sent in
     /// this guild.
     #[cfg(feature = "collector")]
-    pub fn await_reaction(&self, shard_messenger: impl AsRef<ShardMessenger>) -> ReactionCollector {
-        ReactionCollector::new(shard_messenger).guild_id(self.id)
+    pub fn await_reaction(&self) -> ReactionCollector {
+        ReactionCollector::new().guild_id(self.id)
     }
 
     /// Same as [`Self::await_reaction`].
     #[cfg(feature = "collector")]
     pub fn await_reactions(
-        &self,
-        shard_messenger: impl AsRef<ShardMessenger>,
+        &self
     ) -> ReactionCollector {
-        self.await_reaction(shard_messenger)
+        self.await_reaction()
     }
 
     /// Gets the guild active threads.

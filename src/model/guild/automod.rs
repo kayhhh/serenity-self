@@ -377,18 +377,10 @@ pub struct ActionExecution {
     /// Will be `None` if this event does not correspond to an action with type [`Action::Alert`].
     pub alert_system_message_id: Option<MessageId>,
     /// User generated text content.
-    ///
-    /// Requires [`GatewayIntents::MESSAGE_CONTENT`] to receive non-empty values.
-    ///
-    /// [`GatewayIntents::MESSAGE_CONTENT`]: crate::model::gateway::GatewayIntents::MESSAGE_CONTENT
     pub content: String,
     /// Word or phrase configured in the rule that triggered the rule.
     pub matched_keyword: Option<String>,
     /// Substring in content that triggered the rule.
-    ///
-    /// Requires [`GatewayIntents::MESSAGE_CONTENT`] to receive non-empty values.
-    ///
-    /// [`GatewayIntents::MESSAGE_CONTENT`]: crate::model::gateway::GatewayIntents::MESSAGE_CONTENT
     pub matched_content: Option<String>,
 }
 

@@ -69,7 +69,7 @@
 //!
 //! framework.configure(Configuration::new().prefix("~"));
 //!
-//! let mut client = Client::builder(&token, GatewayIntents::default())
+//! let mut client = Client::builder(&token)
 //!     .event_handler(Handler)
 //!     .framework(framework)
 //!     .await?;

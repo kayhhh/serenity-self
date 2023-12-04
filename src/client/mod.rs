@@ -372,7 +372,7 @@ impl IntoFuture for ClientBuilder {
 ///
 /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut client =
-///     Client::builder("my token here", GatewayIntents::default()).event_handler(Handler).await?;
+///     Client::builder("my token here").event_handler(Handler).await?;
 ///
 /// client.start().await?;
 /// # Ok(())
@@ -454,7 +454,7 @@ pub struct Client {
     ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let mut client = Client::builder(&token, GatewayIntents::default()).event_handler(Handler).await?;
+    /// let mut client = Client::builder(&token).event_handler(Handler).await?;
     /// {
     ///     let mut data = client.data.write().await;
     ///     data.insert::<MessageEventCounter>(HashMap::default());
@@ -513,7 +513,7 @@ impl Client {
     ///
     /// # async fn run() -> Result<(), Box<dyn Error>> {
     /// let token = std::env::var("DISCORD_TOKEN")?;
-    /// let mut client = Client::builder(&token, GatewayIntents::default()).await?;
+    /// let mut client = Client::builder(&token).await?;
     ///
     /// if let Err(why) = client.start().await {
     ///     println!("Err with client: {:?}", why);

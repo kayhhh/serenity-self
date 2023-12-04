@@ -89,7 +89,7 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
 
     // There is a method implemented for some models to conveniently collect replies. They return a
     // builder that can be turned into a Stream, or here, where we can await a single reply
-    let collector = msg.author.await_reply(&ctx).timeout(Duration::from_secs(10));
+    let collector = msg.author.await_reply().timeout(Duration::from_secs(10));
     if let Some(answer) = collector.await {
         if answer.content.to_lowercase() == "ferris" {
             let _ = answer.reply(ctx, "That's correct!").await;
@@ -108,7 +108,7 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
 
     // The message model can also be turned into a Collector to collect reactions on it.
     let collector = react_msg
-        .await_reaction(&ctx.shard)
+        .await_reaction()
         .timeout(Duration::from_secs(10))
         .author_id(msg.author.id);
 
@@ -161,7 +161,7 @@ async fn challenge(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
     // We can also collect arbitrary events using the collect() function. For example, here we
     // collect updates to the messages that the user sent above and check for them updating all 5
     // of them.
-    let mut collector = serenity::collector::collect(&ctx.shard, move |event| match event {
+    let mut collector = serenity::collector::collect(move |event| match event {
         // Only collect MessageUpdate events for the 5 MessageIds we're interested in.
         Event::MessageUpdate(event) if collected.iter().any(|msg| event.id == msg.id) => {
             Some(event.id)

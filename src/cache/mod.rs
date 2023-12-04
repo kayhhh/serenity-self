@@ -20,7 +20,7 @@
 //!
 //! [`http`]: crate::http
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 #[cfg(feature = "temp_cache")]
 use std::sync::Arc;
@@ -130,8 +130,6 @@ pub type MessageRef<'a> = CacheRef<'a, ChannelId, Message, HashMap<MessageId, Me
 ///   [`PresenceUpdateEvent`], [`ReadyEvent`]
 /// - presences: [`PresenceUpdateEvent`], [`ReadyEvent`]
 /// - messages: [`MessageCreateEvent`]
-///
-/// The documentation of each event contains the required gateway intents.
 ///
 /// [`http`]: crate::http
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]

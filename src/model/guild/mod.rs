@@ -266,8 +266,6 @@ pub struct Guild {
     /// All active threads in this guild that current user has permission to view.
     pub threads: Vec<GuildChannel>,
     /// A mapping of [`User`]s' Ids to their current presences.
-    ///
-    /// **Note**: This will be empty unless the "guild presences" privileged intent is enabled.
     #[serde(with = "presences")]
     pub presences: HashMap<UserId, Presence>,
     /// The stage instances in this guild.
@@ -2364,7 +2362,7 @@ impl Guild {
     /// }
     ///
     /// let mut client =
-    ///     Client::builder("token", GatewayIntents::default()).event_handler(Handler).await?;
+    ///     Client::builder("token").event_handler(Handler).await?;
     ///
     /// client.start().await?;
     /// # Ok(())

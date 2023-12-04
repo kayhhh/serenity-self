@@ -1,10 +1,5 @@
-// Or we'll get deprecation warnings from our own deprecated type (seriously Rust?)
-#![allow(deprecated)]
-
-use futures::future::pending;
 use futures::{Stream, StreamExt as _};
 
-use crate::gateway::CollectorCallback;
 use crate::model::prelude::*;
 
 /// Fundamental collector function. All collector types in this module are just wrappers around
@@ -74,15 +69,6 @@ macro_rules! make_specific_collector {
                     self
                 }
             )*
-        }
-
-        impl std::future::IntoFuture for $collector_type {
-            type Output = Option<$item_type>;
-            type IntoFuture = futures::future::BoxFuture<'static, Self::Output>;
-
-            fn into_future(self) -> Self::IntoFuture {
-                Box::pin(self.next())
-            }
         }
     };
 }
