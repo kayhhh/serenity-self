@@ -75,7 +75,7 @@ impl CreateCommandOption {
         self
     }
 
-    /// Sets the description for the option, replacing the current value as set in [`Self::new]`.
+    /// Sets the description for the option, replacing the current value as set in [`Self::new`].
     ///
     /// **Note**: Must be between 1 and 100 characters.
     pub fn description(mut self, description: impl Into<String>) -> Self {
