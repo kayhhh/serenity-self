@@ -2,7 +2,7 @@
 
 # serenity-self
 
-![serenity-self logo](https://cdn.discordapp.com/avatars/282201122733686784/ba49f6aa508b303ee1fb1b084a6d5a83.png?size=256&quality=lossless&width=0&height=256)
+![serenity-self logo](logo.png)
 
 Serenity-self is a Rust library for the Discord API with user account support.
 
