@@ -4,6 +4,8 @@ use serde::de::{Deserializer, Error as DeError};
 use serde::ser::{Error as _, Serializer};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "unstable_discord_api")]
+use super::{AuthorizingIntegrationOwners, InteractionContext};
 #[cfg(feature = "model")]
 use crate::builder::{
     Builder,
@@ -34,6 +36,7 @@ use crate::model::id::{
     TargetId,
     UserId,
 };
+use crate::model::monetization::Entitlement;
 use crate::model::user::User;
 use crate::model::Permissions;
 #[cfg(all(feature = "collector", feature = "utils"))]
@@ -73,11 +76,21 @@ pub struct CommandInteraction {
     /// Always `1`.
     pub version: u8,
     /// Permissions the app or bot has within the channel the interaction was sent from.
+    // TODO(next): This is now always serialized.
     pub app_permissions: Option<Permissions>,
     /// The selected language of the invoking user.
     pub locale: String,
     /// The guild's preferred locale.
     pub guild_locale: Option<String>,
+    /// For monetized applications, any entitlements of the invoking user.
+    pub entitlements: Vec<Entitlement>,
+    /// The owners of the applications that authorized the interaction, such as a guild or user.
+    #[serde(default)]
+    #[cfg(feature = "unstable_discord_api")]
+    pub authorizing_integration_owners: AuthorizingIntegrationOwners,
+    /// The context where the interaction was triggered from.
+    #[cfg(feature = "unstable_discord_api")]
+    pub context: Option<InteractionContext>,
 }
 
 #[cfg(feature = "model")]

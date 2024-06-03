@@ -5,6 +5,29 @@ use std::num::{NonZeroI64, NonZeroU64};
 
 use super::Timestamp;
 
+macro_rules! newtype_display_impl {
+    ($name:ident) => {
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let inner = self.0;
+                fmt::Display::fmt(&inner, f)
+            }
+        }
+    };
+}
+
+macro_rules! forward_fromstr_impl {
+    ($name:ident) => {
+        impl std::str::FromStr for $name {
+            type Err = <u64 as std::str::FromStr>::Err;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(s.parse()?))
+            }
+        }
+    };
+}
+
 macro_rules! id_u64 {
     ($($name:ident;)*) => {
         $(
@@ -36,14 +59,12 @@ macro_rules! id_u64 {
                 }
             }
 
+            newtype_display_impl!($name);
+            forward_fromstr_impl!($name);
+
             impl Default for $name {
                 fn default() -> Self {
-                    // Have the possible panic at compile time. `unwrap()` is not const-stable
-                    const ONE: NonZeroU64 = match NonZeroU64::new(1) {
-                        Some(x) => x,
-                        None => unreachable!(),
-                    };
-                    Self(ONE)
+                    Self(NonZeroU64::MIN)
                 }
             }
 
@@ -80,13 +101,6 @@ macro_rules! id_u64 {
                 }
             }
 
-            impl fmt::Display for $name {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    let inner = self.0;
-                    fmt::Display::fmt(&inner, f)
-                }
-            }
-
             impl From<$name> for NonZeroU64 {
                 fn from(id: $name) -> NonZeroU64 {
                     id.0
@@ -108,14 +122,6 @@ macro_rules! id_u64 {
             impl From<$name> for i64 {
                 fn from(id: $name) -> i64 {
                     id.get() as i64
-                }
-            }
-
-            impl std::str::FromStr for $name {
-                type Err = <u64 as std::str::FromStr>::Err;
-
-                fn from_str(s: &str) -> Result<Self, Self::Err> {
-                    Ok(Self(s.parse()?))
                 }
             }
 
@@ -143,7 +149,6 @@ pub struct EmojiId(#[serde(with = "snowflake")] NonZeroU64);
 /// An identifier for an unspecific entity.
 #[repr(packed)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
-// TODO: replace occurences of `#[serde(with = "snowflake")] u64` in the codebase with GenericId
 pub struct GenericId(#[serde(with = "snowflake")] NonZeroU64);
 
 /// An identifier for a Guild
@@ -167,6 +172,7 @@ pub struct MessageId(#[serde(with = "snowflake")] NonZeroU64);
 pub struct RoleId(#[serde(with = "snowflake")] NonZeroU64);
 
 /// An identifier for an auto moderation rule
+#[repr(packed)]
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct RuleId(#[serde(with = "snowflake")] NonZeroU64);
 
@@ -248,8 +254,13 @@ pub struct TargetId(#[serde(with = "snowflake")] NonZeroU64);
 pub struct StageInstanceId(#[serde(with = "snowflake")] NonZeroU64);
 
 /// An identifier for a forum tag.
+#[repr(packed)]
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct ForumTagId(#[serde(with = "snowflake")] NonZeroU64);
+
+/// An identifier for an entitlement.
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deserialize, Serialize)]
+pub struct EntitlementId(#[serde(with = "snowflake")] pub NonZeroU64);
 
 id_u64! {
     AttachmentId;
@@ -277,6 +288,7 @@ id_u64! {
     StageInstanceId;
     RuleId;
     ForumTagId;
+    EntitlementId;
 }
 
 /// An identifier for a Shard.
@@ -287,37 +299,43 @@ id_u64! {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct ShardId(pub u32);
 
-impl fmt::Display for ShardId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl ShardId {
+    /// Retrieves the value as a [`u32`].
+    ///
+    /// This is not a [`u64`] as [`ShardId`]s are not a discord concept and are simply used for
+    /// internal type safety.
+    #[must_use]
+    pub fn get(self) -> u32 {
+        self.0
     }
 }
 
-/// Used with `#[serde(with|deserialize_with|serialize_with)]`
+newtype_display_impl!(ShardId);
+
+/// An identifier for a [`Poll Answer`](super::channel::PollAnswer).
 ///
-/// # Examples
+/// This is identifier is special as it is not a snowflake.
 ///
-/// ```rust,ignore
-/// #[derive(Deserialize, Serialize)]
-/// struct A {
-///     #[serde(with = "snowflake")]
-///     id: u64,
-/// }
-///
-/// #[derive(Deserialize)]
-/// struct B {
-///     #[serde(deserialize_with = "snowflake::deserialize")]
-///     id: u64,
-/// }
-///
-/// #[derive(Serialize)]
-/// struct C {
-///     #[serde(serialize_with = "snowflake::serialize")]
-///     id: u64,
-/// }
-/// ```
-pub(crate) mod snowflake {
-    use std::convert::TryFrom;
+/// The specific algorithm used is currently just a sequential index but this is subject to change.
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Deserialize, Serialize)]
+#[repr(packed)]
+pub struct AnswerId(u8);
+
+impl AnswerId {
+    /// Retrieves the value as a [`u64`].
+    ///
+    /// Keep in mind that this is **not a snowflake** and the values are subject to change.
+    #[must_use]
+    pub fn get(self) -> u64 {
+        self.0.into()
+    }
+}
+
+newtype_display_impl!(AnswerId);
+forward_fromstr_impl!(AnswerId);
+
+mod snowflake {
     use std::fmt;
     use std::num::NonZeroU64;
 

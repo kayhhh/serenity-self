@@ -7,6 +7,7 @@
 //! git = "https://github.com/serenity-rs/serenity.git"
 //! features = ["framework", "standard_framework"]
 //! ```
+#![allow(deprecated)] // We recommend migrating to poise, instead of using the standard command framework.
 mod commands;
 
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use serenity::async_trait;
 use serenity::framework::standard::macros::group;
 use serenity::framework::standard::Configuration;
 use serenity::framework::StandardFramework;
+use serenity::gateway::ShardManager;
 use serenity::http::Http;
 use serenity::model::event::ResumedEvent;
 use serenity::model::gateway::Ready;
@@ -26,6 +28,12 @@ use tracing::{error, info};
 use crate::commands::math::*;
 use crate::commands::meta::*;
 use crate::commands::owner::*;
+
+pub struct ShardManagerContainer;
+
+impl TypeMapKey for ShardManagerContainer {
+    type Value = Arc<ShardManager>;
+}
 
 struct Handler;
 
@@ -76,14 +84,25 @@ async fn main() {
     let framework = StandardFramework::new().group(&GENERAL_GROUP);
     framework.configure(Configuration::new().owners(owners).prefix("~"));
 
-    let mut client = Client::builder(&token)
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&token, intents)
         .framework(framework)
         .event_handler(Handler)
         .await
         .expect("Err creating client");
 
+    {
+        let mut data = client.data.write().await;
+        data.insert::<ShardManagerContainer>(client.shard_manager.clone());
+    }
+
+    let shard_manager = client.shard_manager.clone();
+
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Could not register ctrl+c handler");
+        shard_manager.shutdown_all().await;
     });
 
     if let Err(why) = client.start().await {

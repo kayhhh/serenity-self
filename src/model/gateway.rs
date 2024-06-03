@@ -36,6 +36,8 @@ pub struct BotGateway {
 #[non_exhaustive]
 pub struct Activity {
     /// The ID of the application for the activity.
+    #[serde(deserialize_with = "deserialize_buggy_id")]
+    #[serde(default)]
     pub application_id: Option<ApplicationId>,
     /// Images for the presence and their texts.
     pub assets: Option<ActivityAssets>,
@@ -574,6 +576,15 @@ bitflags! {
         /// Enables the following gateway events:
         /// - AUTO_MODERATION_ACTION_EXECUTION
         const AUTO_MODERATION_EXECUTION = 1 << 21;
+
+        /// Enables the following gateway events for guilds:
+        /// - MESSAGE_POLL_VOTE_ADD
+        /// - MESSAGE_POLL_VOTE_REMOVE
+        const GUILD_MESSAGE_POLLS = 1 << 24;
+        /// Enables the following gateway events for direct messages:
+        /// - MESSAGE_POLL_VOTE_ADD
+        /// - MESSAGE_POLL_VOTE_REMOVE
+        const DIRECT_MESSAGE_POLLS = 1 << 25;
     }
 }
 

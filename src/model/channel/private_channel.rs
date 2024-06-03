@@ -10,7 +10,6 @@ use crate::http::CacheHttp;
 use crate::http::{Http, Typing};
 use crate::model::prelude::*;
 use crate::model::utils::single_recipient;
-use crate::model::Timestamp;
 
 /// A Direct Message text channel with another user.
 ///
@@ -157,12 +156,10 @@ impl PrivateChannel {
     }
 
     /// Determines if the channel is NSFW.
-    ///
-    /// **Note**: This method is for consistency. This will always return `false`, due to DMs not
-    /// being considered NSFW.
     #[inline]
     #[must_use]
     #[allow(clippy::unused_self)]
+    #[deprecated = "This always returns false"]
     pub fn is_nsfw(&self) -> bool {
         false
     }

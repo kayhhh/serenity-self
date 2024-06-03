@@ -1,5 +1,6 @@
 //! In this example, you will be shown various ways of sharing data between events and commands.
 //! And how to use locks correctly to avoid deadlocking the bot.
+#![allow(deprecated)] // We recommend migrating to poise, instead of using the standard command framework.
 
 use std::collections::HashMap;
 use std::env;
@@ -12,7 +13,6 @@ use serenity::framework::standard::{Args, CommandResult, Configuration, Standard
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
-use tokio::sync::RwLock;
 
 // A container type is created for inserting into the Client's `data`, which allows for data to be
 // accessible across all events and framework commands, or anywhere else that has a copy of the
@@ -110,7 +110,10 @@ async fn main() {
     let framework = StandardFramework::new().before(before).group(&GENERAL_GROUP);
     framework.configure(Configuration::new().with_whitespace(true).prefix("~"));
 
-    let mut client = Client::builder(&token)
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .framework(framework)
         .await

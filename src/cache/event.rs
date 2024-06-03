@@ -22,7 +22,6 @@ use crate::model::event::{
     MessageCreateEvent,
     MessageUpdateEvent,
     PresenceUpdateEvent,
-    PresencesReplaceEvent,
     ReadyEvent,
     ThreadCreateEvent,
     ThreadDeleteEvent,
@@ -82,8 +81,12 @@ impl CacheUpdate for ChannelPinsUpdateEvent {
     type Output = ();
 
     fn update(&mut self, cache: &Cache) -> Option<()> {
-        if let Some(mut channel) = cache.channel_mut(self.channel_id) {
-            channel.last_pin_timestamp = self.last_pin_timestamp;
+        if let Some(guild_id) = self.guild_id {
+            if let Some(mut guild) = cache.guilds.get_mut(&guild_id) {
+                if let Some(channel) = guild.channels.get_mut(&self.channel_id) {
+                    channel.last_pin_timestamp = self.last_pin_timestamp;
+                }
+            }
         }
 
         None
@@ -205,6 +208,7 @@ impl CacheUpdate for GuildMemberUpdateEvent {
                 member.mute.clone_from(&self.mute);
                 member.avatar.clone_from(&self.avatar);
                 member.communication_disabled_until.clone_from(&self.communication_disabled_until);
+                member.unusual_dm_activity_until.clone_from(&self.unusual_dm_activity_until);
 
                 item
             } else {
@@ -226,6 +230,7 @@ impl CacheUpdate for GuildMemberUpdateEvent {
                     avatar: self.avatar,
                     communication_disabled_until: self.communication_disabled_until,
                     flags: GuildMemberFlags::default(),
+                    unusual_dm_activity_until: self.unusual_dm_activity_until,
                 });
             }
 
@@ -341,6 +346,23 @@ impl CacheUpdate for MessageCreateEvent {
     type Output = Message;
 
     fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
+        // Update the relevant channel object with the new latest message if this message is newer
+        let guild = self.message.guild_id.and_then(|g_id| cache.guilds.get_mut(&g_id));
+
+        if let Some(mut guild) = guild {
+            if let Some(channel) = guild.channels.get_mut(&self.message.channel_id) {
+                update_channel_last_message_id(&self.message, channel, cache);
+            } else {
+                // This may be a thread.
+                let thread =
+                    guild.threads.iter_mut().find(|thread| thread.id == self.message.channel_id);
+                if let Some(thread) = thread {
+                    update_channel_last_message_id(&self.message, thread, cache);
+                }
+            }
+        }
+
+        // Add the new message to the cache and remove the oldest cached message.
         let max = cache.settings().max_messages;
 
         if max == 0 {
@@ -362,6 +384,21 @@ impl CacheUpdate for MessageCreateEvent {
         messages.insert(self.message.id, self.message.clone());
 
         removed_msg
+    }
+}
+
+fn update_channel_last_message_id(message: &Message, channel: &mut GuildChannel, cache: &Cache) {
+    if let Some(last_message_id) = channel.last_message_id {
+        let most_recent_timestamp = cache.message(channel.id, last_message_id).map(|m| m.timestamp);
+        if let Some(most_recent_timestamp) = most_recent_timestamp {
+            if message.timestamp > most_recent_timestamp {
+                channel.last_message_id = Some(message.id);
+            }
+        } else {
+            channel.last_message_id = Some(message.id);
+        }
+    } else {
+        channel.last_message_id = Some(message.id);
     }
 }
 
@@ -416,21 +453,10 @@ impl CacheUpdate for PresenceUpdateEvent {
                         avatar: None,
                         communication_disabled_until: None,
                         flags: GuildMemberFlags::default(),
+                        unusual_dm_activity_until: None,
                     });
                 }
             }
-        }
-
-        None
-    }
-}
-
-impl CacheUpdate for PresencesReplaceEvent {
-    type Output = ();
-
-    fn update(&mut self, cache: &Cache) -> Option<()> {
-        for presence in &self.presences {
-            cache.presences.insert(presence.user.id, presence.clone());
         }
 
         None
@@ -565,14 +591,11 @@ impl CacheUpdate for VoiceChannelStatusUpdateEvent {
     type Output = String;
 
     fn update(&mut self, cache: &Cache) -> Option<Self::Output> {
-        if let Some(mut channel) = cache.channel_mut(self.id) {
-            let old = channel.status.clone();
-            channel.status = self.status.clone();
-            // Discord updates topic but doesn't fire ChannelUpdate.
-            channel.topic = self.status.clone();
-            old
-        } else {
-            None
-        }
+        let mut guild = cache.guilds.get_mut(&self.guild_id)?;
+        let channel = guild.channels.get_mut(&self.id)?;
+
+        let old = channel.status.clone();
+        channel.status.clone_from(&self.status);
+        old
     }
 }

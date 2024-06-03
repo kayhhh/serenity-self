@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::cell::Cell;
 use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::num::NonZeroU64;
 
 use serde::ser::{Serialize, SerializeSeq, Serializer};
 
@@ -67,6 +68,105 @@ where
     remove_from_map_opt(map, key)?.ok_or_else(|| serde::de::Error::missing_field(key))
 }
 
+/// Workaround for Discord sending 0 value Ids as default values.
+/// This has been fixed properly on next by swapping to a NonMax based impl.
+pub fn deserialize_buggy_id<'de, D, Id>(deserializer: D) -> StdResult<Option<Id>, D::Error>
+where
+    D: Deserializer<'de>,
+    Id: From<NonZeroU64>,
+{
+    if let Some(val) = Option::<StrOrInt<'de>>::deserialize(deserializer)? {
+        let val = val.parse().map_err(serde::de::Error::custom)?;
+        Ok(NonZeroU64::new(val).map(Id::from))
+    } else {
+        Ok(None)
+    }
+}
+
+pub(super) struct SerializeIter<I>(Cell<Option<I>>);
+
+impl<I> SerializeIter<I> {
+    pub fn new(iter: I) -> Self {
+        Self(Cell::new(Some(iter)))
+    }
+}
+
+impl<Iter, Item> serde::Serialize for SerializeIter<Iter>
+where
+    Iter: Iterator<Item = Item>,
+    Item: serde::Serialize,
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let Some(iter) = self.0.take() else {
+            return serializer.serialize_seq(Some(0))?.end();
+        };
+
+        serializer.collect_seq(iter)
+    }
+}
+
+pub(super) enum StrOrInt<'de> {
+    String(String),
+    Str(&'de str),
+    Int(u64),
+}
+
+impl StrOrInt<'_> {
+    pub fn parse(&self) -> Result<u64, std::num::ParseIntError> {
+        match self {
+            StrOrInt::String(val) => val.parse(),
+            StrOrInt::Str(val) => val.parse(),
+            StrOrInt::Int(val) => Ok(*val),
+        }
+    }
+
+    pub fn into_enum<T>(self, string: fn(String) -> T, int: fn(u64) -> T) -> T {
+        match self {
+            Self::Int(val) => int(val),
+            Self::String(val) => string(val),
+            Self::Str(val) => string(val.into()),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for StrOrInt<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> StdResult<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = StrOrInt<'de>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string or integer")
+            }
+
+            fn visit_borrowed_str<E>(self, val: &'de str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(StrOrInt::Str(val))
+            }
+
+            fn visit_str<E: serde::de::Error>(self, val: &str) -> StdResult<Self::Value, E> {
+                self.visit_string(val.into())
+            }
+
+            fn visit_string<E: serde::de::Error>(self, val: String) -> StdResult<Self::Value, E> {
+                Ok(StrOrInt::String(val))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, val: i64) -> StdResult<Self::Value, E> {
+                self.visit_u64(val as _)
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, val: u64) -> Result<Self::Value, E> {
+                Ok(StrOrInt::Int(val))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
 /// Used with `#[serde(with = "emojis")]`
 pub mod emojis {
     use std::collections::HashMap;
@@ -111,10 +211,23 @@ pub fn deserialize_guild_channels<'de, D: Deserializer<'de>>(
     Ok(map)
 }
 
-pub fn deserialize_members<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> StdResult<HashMap<UserId, Member>, D::Error> {
-    deserializer.deserialize_seq(SequenceToMapVisitor::new(|member: &Member| member.user.id))
+/// Used with `#[serde(with = "members")]
+pub mod members {
+    use std::collections::HashMap;
+
+    use serde::Deserializer;
+
+    use super::SequenceToMapVisitor;
+    use crate::model::guild::Member;
+    use crate::model::id::UserId;
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<HashMap<UserId, Member>, D::Error> {
+        deserializer.deserialize_seq(SequenceToMapVisitor::new(|member: &Member| member.user.id))
+    }
+
+    pub use super::serialize_map_values as serialize;
 }
 
 /// Used with `#[serde(with = "presences")]`
@@ -191,11 +304,12 @@ pub mod stickers {
 /// Used with `#[serde(with = "comma_separated_string")]`
 pub mod comma_separated_string {
     use serde::{Deserialize, Deserializer, Serializer};
+    use serde_cow::CowStr;
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Vec<String>, D::Error> {
-        let str_sequence = String::deserialize(deserializer)?;
+        let str_sequence = CowStr::deserialize(deserializer)?.0;
         let vec = str_sequence.split(", ").map(str::to_owned).collect();
 
         Ok(vec)

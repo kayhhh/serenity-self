@@ -21,7 +21,7 @@ use crate::model::prelude::*;
 /// A builder to create an embed in a message
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/channel#embed-object)
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, PartialEq)]
 #[must_use]
 pub struct CreateEmbed(Embed);
 
@@ -266,6 +266,14 @@ impl CreateEmbedAuthor {
 impl From<EmbedAuthor> for CreateEmbedAuthor {
     fn from(author: EmbedAuthor) -> Self {
         Self(author)
+    }
+}
+
+#[cfg(feature = "model")]
+impl From<User> for CreateEmbedAuthor {
+    fn from(user: User) -> Self {
+        let avatar_icon = user.face();
+        Self::new(user.name).icon_url(avatar_icon)
     }
 }
 

@@ -1,18 +1,14 @@
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 
 use super::context::Context;
 use crate::gateway::ShardStageUpdateEvent;
 use crate::http::RatelimitInfo;
-use crate::model::application::{CommandPermissions, Interaction};
-use crate::model::guild::audit_log::AuditLogEntry;
-use crate::model::guild::automod::{ActionExecution, Rule};
 use crate::model::prelude::*;
 
 macro_rules! event_handler {
     ( $(
         $( #[doc = $doc:literal] )*
+        $( #[deprecated = $deprecated:literal] )?
         $( #[cfg(feature = $feature:literal)] )?
         $variant_name:ident { $( $arg_name:ident: $arg_type:ty ),* } => async fn $method_name:ident(&self $(, $context:ident: Context)?);
     )* ) => {
@@ -22,6 +18,7 @@ macro_rules! event_handler {
             $(
                 $( #[doc = $doc] )*
                 $( #[cfg(feature = $feature)] )?
+                $( #[deprecated = $deprecated] )?
                 async fn $method_name(&self, $($context: Context,)? $( $arg_name: $arg_type ),*) {
                     // Suppress unused argument warnings
                     drop(( $($context,)? $($arg_name),* ))
@@ -37,6 +34,7 @@ macro_rules! event_handler {
             $(
                 $( #[doc = $doc] )*
                 $( #[cfg(feature = $feature)] )?
+                $( #[deprecated = $deprecated] )?
                 $variant_name {
                     $( $arg_name: $arg_type ),*
                 },
@@ -56,6 +54,7 @@ macro_rules! event_handler {
             /// ```
             #[must_use]
             pub fn snake_case_name(&self) -> &'static str {
+                #[allow(deprecated)]
                 match self {
                     $(
                         $( #[cfg(feature = $feature)] )?
@@ -66,6 +65,7 @@ macro_rules! event_handler {
 
             /// Runs the given [`EventHandler`]'s code for this event.
             pub async fn dispatch(self, ctx: Context, handler: &dyn EventHandler) {
+                #[allow(deprecated)]
                 match self {
                     $(
                         $( #[cfg(feature = $feature)] )?
@@ -303,7 +303,7 @@ event_handler! {
     /// Provides the channel's id and the message's id.
     ReactionRemoveEmoji { removed_reactions: Reaction } => async fn reaction_remove_emoji(&self, ctx: Context);
 
-    /// This event is legacy, and likely no longer sent by discord.
+    #[deprecated = "This event does not exist"]
     PresenceReplace { presences: Vec<Presence> } => async fn presence_replace(&self, ctx: Context);
 
     /// Dispatched when a user's presence is updated (e.g off -> on).
@@ -452,6 +452,34 @@ event_handler! {
     ///
     /// Provides data about the cancelled subscription.
     GuildScheduledEventUserRemove { unsubscribed: GuildScheduledEventUserRemoveEvent } => async fn guild_scheduled_event_user_remove(&self, ctx: Context);
+
+    /// Dispatched when a user subscribes to a SKU.
+    ///
+    /// Provides data about the subscription.
+    EntitlementCreate { entitlement: Entitlement } => async fn entitlement_create(&self, ctx: Context);
+
+    /// Dispatched when a user's entitlement has been updated, such as when a subscription is
+    /// renewed for the next billing period.
+    ///
+    /// Provides data abut the updated subscription. If the entitlement is renewed, the
+    /// [`Entitlement::ends_at`] field will have changed.
+    EntitlementUpdate { entitlement: Entitlement } => async fn entitlement_update(&self, ctx: Context);
+
+    /// Dispatched when a user's entitlement has been deleted. This happens rarely, but can occur
+    /// if a subscription is refunded or otherwise deleted by Discord. Entitlements are not deleted
+    /// when they expire.
+    ///
+    /// Provides data about the subscription. Specifically, the [`Entitlement::deleted`] field will
+    /// be set.
+    EntitlementDelete { entitlement: Entitlement } => async fn entitlement_delete(&self, ctx: Context);
+
+    /// Dispatched when a user votes on a message poll.
+    ///
+    /// This will be dispatched multiple times if multiple answers are selected.
+    MessagePollVoteAdd { event: MessagePollVoteAddEvent } => async fn poll_vote_add(&self, ctx: Context);
+
+    /// Dispatched when a user removes a previous vote on a poll.
+    MessagePollVoteRemove { event: MessagePollVoteRemoveEvent } => async fn poll_vote_remove(&self, ctx: Context);
 
     /// Dispatched when an HTTP rate limit is hit
     Ratelimit { data: RatelimitInfo } => async fn ratelimit(&self);

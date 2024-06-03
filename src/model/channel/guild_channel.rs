@@ -30,7 +30,6 @@ use crate::http::{CacheHttp, Http, Typing};
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::internal::prelude::*;
 use crate::model::prelude::*;
-use crate::model::Timestamp;
 
 /// Represents a guild's text, news, or voice channel. Some methods are available only for voice
 /// channels and some are only available for text channels. News channels are a subset of text
@@ -91,8 +90,7 @@ pub struct GuildChannel {
     ///
     /// **Note**: This is only available for voice channels.
     pub user_limit: Option<u32>,
-    /// Used to tell if the channel is not safe for work. Note however, it's recommended to use
-    /// [`Self::is_nsfw`] as it's gonna be more accurate.
+    /// Used to tell if the channel is not safe for work.
     // This field can or can not be present sometimes, but if it isn't default to `false`.
     #[serde(default)]
     pub nsfw: bool,
@@ -556,8 +554,7 @@ impl GuildChannel {
     ///
     /// # Errors
     ///
-    /// If the `cache` is enabled, returns a [`ModelError::InvalidChannelType`] if the channel is
-    /// not a stage channel.
+    /// Returns a [`ModelError::InvalidChannelType`] if the channel is not a stage channel.
     ///
     /// Returns [`Error::Http`] if the user lacks permission, or if invalid data is given.
     ///
@@ -569,6 +566,10 @@ impl GuildChannel {
         user_id: impl Into<UserId>,
         builder: EditVoiceState,
     ) -> Result<()> {
+        if self.kind != ChannelType::Stage {
+            return Err(Error::from(ModelError::InvalidChannelType));
+        }
+
         builder.execute(cache_http, (self.guild_id, self.id, Some(user_id.into()))).await
     }
 
@@ -665,13 +666,11 @@ impl GuildChannel {
     }
 
     /// Determines if the channel is NSFW.
-    ///
-    /// Only [text channels][`ChannelType::Text`] are taken into consideration as being NSFW.
-    /// [voice channels][`ChannelType::Voice`] are never NSFW.
     #[inline]
     #[must_use]
+    #[deprecated = "Use the GuildChannel::nsfw field"]
     pub fn is_nsfw(&self) -> bool {
-        self.kind == ChannelType::Text && self.nsfw
+        self.nsfw
     }
 
     /// Gets a message from the channel.
@@ -906,11 +905,7 @@ impl GuildChannel {
         cache_http: impl CacheHttp,
         builder: CreateMessage,
     ) -> Result<Message> {
-        #[cfg(feature = "cache")]
-        let msg = builder.execute(cache_http, (self.id, Some(self.guild_id))).await;
-        #[cfg(not(feature = "cache"))]
-        let msg = builder.execute(cache_http, (self.id,)).await;
-        msg
+        builder.execute(cache_http, (self.id, Some(self.guild_id))).await
     }
 
     /// Starts typing in the channel for an indefinite period of time.
@@ -1064,12 +1059,22 @@ impl GuildChannel {
     ///
     /// # Errors
     ///
-    /// See [`CreateWebhook::execute`] for a detailed list of possible errors.
+    /// Returns [`ModelError::InvalidChannelType`] if the corresponding channel is not of type
+    /// [`ChannelType::Text`] or [`ChannelType::News`].
+    ///
+    /// See [`CreateWebhook::execute`] for a detailed list of other
+    /// possible errors,
     pub async fn create_webhook(
         &self,
         cache_http: impl CacheHttp,
         builder: CreateWebhook<'_>,
     ) -> Result<Webhook> {
+        // forum channels are not text-based, but webhooks can be created in them
+        // and used to send messages in their posts
+        if !self.is_text_based() && self.kind != ChannelType::Forum {
+            return Err(Error::Model(ModelError::InvalidChannelType));
+        }
+
         self.id.create_webhook(cache_http, builder).await
     }
 
@@ -1100,6 +1105,10 @@ impl GuildChannel {
         cache_http: impl CacheHttp,
         builder: CreateStageInstance<'_>,
     ) -> Result<StageInstance> {
+        if self.kind != ChannelType::Stage {
+            return Err(Error::Model(ModelError::InvalidChannelType));
+        }
+
         self.id.create_stage_instance(cache_http, builder).await
     }
 
@@ -1116,6 +1125,10 @@ impl GuildChannel {
         cache_http: impl CacheHttp,
         builder: EditStageInstance<'_>,
     ) -> Result<StageInstance> {
+        if self.kind != ChannelType::Stage {
+            return Err(Error::Model(ModelError::InvalidChannelType));
+        }
+
         self.id.edit_stage_instance(cache_http, builder).await
     }
 

@@ -1,4 +1,4 @@
-use serde::de::{Deserialize, Deserializer, Error as DeError};
+use serde::de::Error as DeError;
 use serde::ser::{Error as _, Serialize};
 
 #[cfg(feature = "model")]
@@ -60,6 +60,15 @@ pub struct ComponentInteraction {
     pub locale: String,
     /// The guild's preferred locale.
     pub guild_locale: Option<String>,
+    /// For monetized applications, any entitlements of the invoking user.
+    pub entitlements: Vec<Entitlement>,
+    /// The owners of the applications that authorized the interaction, such as a guild or user.
+    #[serde(default)]
+    #[cfg(feature = "unstable_discord_api")]
+    pub authorizing_integration_owners: AuthorizingIntegrationOwners,
+    /// The context where the interaction was triggered from.
+    #[cfg(feature = "unstable_discord_api")]
+    pub context: Option<InteractionContext>,
 }
 
 #[cfg(feature = "model")]

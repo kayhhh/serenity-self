@@ -6,11 +6,13 @@ use crate::model::guild::{
     DefaultMessageNotificationLevel,
     ExplicitContentFilter,
     MfaLevel,
+    SystemChannelFlags,
     VerificationLevel,
 };
 use crate::model::id::{ApplicationId, ChannelId, GenericId, GuildId, RoleId, UserId};
 use crate::model::misc::ImageHash;
 use crate::model::sticker::StickerFormatType;
+use crate::model::utils::StrOrInt;
 use crate::model::{Permissions, Timestamp};
 
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
@@ -22,7 +24,7 @@ pub struct AffectedRole {
 }
 
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
-#[derive(Debug, PartialEq, Eq, Deserialize, Serialize, Clone)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone)]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum EntityType {
@@ -30,12 +32,18 @@ pub enum EntityType {
     Str(String),
 }
 
+impl<'de> serde::Deserialize<'de> for EntityType {
+    fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(StrOrInt::deserialize(deserializer)?.into_enum(Self::Str, Self::Int))
+    }
+}
+
 macro_rules! generate_change {
     ( $(
         $( #[doc = $doc:literal] )?
         $key:literal => $name:ident ($type:ty),
     )* ) => {
-        #[cfg_attr(not(simd_json), allow(clippy::derive_partial_eq_without_eq))]
+        #[cfg_attr(not(feature = "simd_json"), allow(clippy::derive_partial_eq_without_eq))]
         #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
         #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
         // serde_json's Value impls Eq, simd-json's Value doesn't
@@ -55,6 +63,29 @@ macro_rules! generate_change {
                     new: Option<$type>,
                 },
             )*
+
+            /* These changes are special because their variant names do not match their keys. */
+
+            /// Role was added to a member.
+            #[serde(rename = "$add")]
+            RolesAdded {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "old_value")]
+                old: Option<Vec<AffectedRole>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "new_value")]
+                new: Option<Vec<AffectedRole>>,
+            },
+            /// Role was removed to a member.
+            #[serde(rename = "$remove")]
+            RolesRemove {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "old_value")]
+                old: Option<Vec<AffectedRole>>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                #[serde(rename = "new_value")]
+                new: Option<Vec<AffectedRole>>,
+            },
 
             /// Unknown key was changed.
             Other {
@@ -77,6 +108,8 @@ macro_rules! generate_change {
             pub fn key(&self) -> &str {
                 match self {
                     $( Self::$name { .. } => $key, )*
+                    Self::RolesAdded { .. } => "$add",
+                    Self::RolesRemove { .. } => "$remove",
                     Self::Other { name, .. } => name,
                     Self::Unknown => "unknown",
                 }
@@ -200,16 +233,14 @@ generate_change! {
     "rate_limit_per_user" => RateLimitPerUser(u16),
     /// Region of a guild was changed.
     "region" => Region(String),
-    /// Role was added to a member.
-    "add" => RolesAdded(Vec<AffectedRole>),
-    /// Role was removed to a member.
-    "remove" => RolesRemove(Vec<AffectedRole>),
     /// ID of the rules channel was changed.
     "rules_channel_id" => RulesChannelId(ChannelId),
     /// Invite splash page artwork was changed.
     "splash_hash" => SplashHash(ImageHash),
     /// Status of guild scheduled event was changed.
     "status" => Status(u64),
+    /// System channel settings were changed.
+    "system_channel_flags" => SystemChannelFlags(SystemChannelFlags),
     /// ID of the system channel was changed.
     "system_channel_id" => SystemChannelId(ChannelId),
     /// Related emoji of a sticker was changed.
@@ -282,5 +313,24 @@ mod tests {
             new: Some(Permissions::MANAGE_GUILD),
         };
         assert_json(&value, json!({"key": "permissions", "old_value": "0", "new_value": "32"}));
+    }
+
+    #[test]
+    fn system_channels() {
+        let value = Change::SystemChannelFlags {
+            old: Some(
+                SystemChannelFlags::SUPPRESS_GUILD_REMINDER_NOTIFICATIONS
+                    | SystemChannelFlags::SUPPRESS_JOIN_NOTIFICATION_REPLIES,
+            ),
+            new: Some(
+                SystemChannelFlags::SUPPRESS_GUILD_REMINDER_NOTIFICATIONS
+                    | SystemChannelFlags::SUPPRESS_JOIN_NOTIFICATION_REPLIES
+                    | SystemChannelFlags::SUPPRESS_JOIN_NOTIFICATIONS,
+            ),
+        };
+        assert_json(
+            &value,
+            json!({"key": "system_channel_flags", "old_value": 12, "new_value": 13 }),
+        );
     }
 }

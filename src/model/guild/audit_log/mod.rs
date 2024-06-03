@@ -1,9 +1,7 @@
 //! Audit log types for administrative actions within guilds.
 
-use std::collections::HashMap;
 use std::mem::transmute;
 
-use serde::de::Deserializer;
 use serde::ser::{Serialize, Serializer};
 
 mod change;
@@ -67,6 +65,7 @@ impl Action {
     }
 
     #[must_use]
+    #[allow(unknown_lints, clippy::missing_transmute_annotations)]
     pub fn from_value(value: u8) -> Action {
         match value {
             1 => Action::GuildUpdate,

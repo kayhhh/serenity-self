@@ -21,8 +21,8 @@ use crate::constants;
 use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http};
-use crate::model::application::{ActionRow, MessageInteraction};
 use crate::model::prelude::*;
+use crate::model::utils::StrOrInt;
 #[cfg(all(feature = "model", feature = "cache"))]
 use crate::utils;
 
@@ -106,10 +106,16 @@ pub struct Message {
     pub flags: Option<MessageFlags>,
     /// The message that was replied to using this message.
     pub referenced_message: Option<Box<Message>>, // Boxed to avoid recursion
+    #[cfg_attr(
+        all(not(ignore_serenity_deprecated), feature = "unstable_discord_api"),
+        deprecated = "Use interaction_metadata"
+    )]
+    pub interaction: Option<Box<MessageInteraction>>,
     /// Sent if the message is a response to an [`Interaction`].
     ///
     /// [`Interaction`]: crate::model::application::Interaction
-    pub interaction: Option<Box<MessageInteraction>>,
+    #[cfg(feature = "unstable_discord_api")]
+    pub interaction_metadata: Option<Box<MessageInteractionMetadata>>,
     /// The thread that was started from this message, includes thread member object.
     pub thread: Option<GuildChannel>,
     /// The components of this message
@@ -138,6 +144,12 @@ pub struct Message {
     ///
     /// Only present in [`MessageCreateEvent`].
     pub member: Option<Box<PartialMember>>,
+    /// A poll that may be attached to a message.
+    ///
+    /// This is often omitted, so is boxed to improve memory usage.
+    ///
+    /// Only present in [`MessageCreateEvent`].
+    pub poll: Option<Box<Poll>>,
 }
 
 #[cfg(feature = "model")]
@@ -203,6 +215,7 @@ impl Message {
 
     /// A util function for determining whether this message was sent by someone else, or the bot.
     #[cfg(feature = "cache")]
+    #[deprecated = "Check Message::author is equal to Cache::current_user"]
     pub fn is_own(&self, cache: impl AsRef<Cache>) -> bool {
         self.author.id == cache.as_ref().current_user().id
     }
@@ -346,21 +359,14 @@ impl Message {
     ///
     /// [Manage Messages]: Permissions::MANAGE_MESSAGES
     pub async fn edit(&mut self, cache_http: impl CacheHttp, builder: EditMessage) -> Result<()> {
-        #[cfg(feature = "cache")]
-        {
-            if let Some(cache) = cache_http.cache() {
-                if self.author.id != cache.current_user().id {
-                    return Err(Error::Model(ModelError::InvalidUser));
-                }
-            }
-        }
         if let Some(flags) = self.flags {
             if flags.contains(MessageFlags::IS_VOICE_MESSAGE) {
                 return Err(Error::Model(ModelError::CannotEditVoiceMessage));
             }
         }
 
-        *self = builder.execute(cache_http, (self.channel_id, self.id)).await?;
+        *self =
+            builder.execute(cache_http, (self.channel_id, self.id, Some(self.author.id))).await?;
         Ok(())
     }
 
@@ -392,12 +398,17 @@ impl Message {
         }
 
         // Then replace all role mentions.
-        for id in &self.mention_roles {
-            let mention = id.mention().to_string();
+        if let Some(guild_id) = self.guild_id {
+            for id in &self.mention_roles {
+                let mention = id.mention().to_string();
 
-            if let Some(role) = id.to_role_cached(&cache) {
-                result = result.replace(&mention, &format!("@{}", role.name));
-            } else {
+                if let Some(guild) = cache.as_ref().guild(guild_id) {
+                    if let Some(role) = guild.roles.get(id) {
+                        result = result.replace(&mention, &format!("@{}", role.name));
+                        continue;
+                    }
+                }
+
                 result = result.replace(&mention, "@deleted-role");
             }
         }
@@ -455,6 +466,7 @@ impl Message {
     /// never set for those, which this method relies on.
     #[inline]
     #[must_use]
+    #[deprecated = "Check if guild_id is None if the message is received from the gateway."]
     pub fn is_private(&self) -> bool {
         self.guild_id.is_none()
     }
@@ -527,13 +539,35 @@ impl Message {
         cache_http: impl CacheHttp,
         reaction_type: impl Into<ReactionType>,
     ) -> Result<Reaction> {
-        self._react(cache_http, reaction_type.into()).await
+        self._react(cache_http, reaction_type.into(), false).await
+    }
+
+    /// React to the message with a custom [`Emoji`] or unicode character.
+    ///
+    /// **Note**: Requires  [Add Reactions] and [Use External Emojis] permissions.
+    ///
+    /// # Errors
+    ///
+    /// If the `cache` is enabled, returns a [`ModelError::InvalidPermissions`] if the current user
+    /// does not have the required [permissions].
+    ///
+    /// [Add Reactions]: Permissions::ADD_REACTIONS
+    /// [Use External Emojis]: Permissions::USE_EXTERNAL_EMOJIS
+    /// [permissions]: crate::model::permissions
+    #[inline]
+    pub async fn super_react(
+        &self,
+        cache_http: impl CacheHttp,
+        reaction_type: impl Into<ReactionType>,
+    ) -> Result<Reaction> {
+        self._react(cache_http, reaction_type.into(), true).await
     }
 
     async fn _react(
         &self,
         cache_http: impl CacheHttp,
         reaction_type: ReactionType,
+        burst: bool,
     ) -> Result<Reaction> {
         #[cfg_attr(not(feature = "cache"), allow(unused_mut))]
         let mut user_id = None;
@@ -547,13 +581,30 @@ impl Message {
                         self.channel_id,
                         Permissions::ADD_REACTIONS,
                     )?;
+
+                    if burst {
+                        utils::user_has_perms_cache(
+                            cache,
+                            self.channel_id,
+                            Permissions::USE_EXTERNAL_EMOJIS,
+                        )?;
+                    }
                 }
 
                 user_id = Some(cache.current_user().id);
             }
         }
 
-        cache_http.http().create_reaction(self.channel_id, self.id, &reaction_type).await?;
+        let reaction_types = if burst {
+            cache_http
+                .http()
+                .create_super_reaction(self.channel_id, self.id, &reaction_type)
+                .await?;
+            ReactionTypes::Burst
+        } else {
+            cache_http.http().create_reaction(self.channel_id, self.id, &reaction_type).await?;
+            ReactionTypes::Normal
+        };
 
         Ok(Reaction {
             channel_id: self.channel_id,
@@ -562,6 +613,10 @@ impl Message {
             user_id,
             guild_id: self.guild_id,
             member: self.member.as_deref().map(|member| member.clone().into()),
+            message_author_id: None,
+            burst,
+            burst_colours: None,
+            reaction_type: reaction_types,
         })
     }
 
@@ -735,6 +790,15 @@ impl Message {
         cache_http.http().unpin_message(self.channel_id, self.id, None).await
     }
 
+    /// Ends the [`Poll`] on this message, if there is one.
+    ///
+    /// # Errors
+    ///
+    /// See [`ChannelId::end_poll`] for more information.
+    pub async fn end_poll(&self, http: impl AsRef<Http>) -> Result<Self> {
+        self.channel_id.end_poll(http, self.id).await
+    }
+
     /// Tries to return author's nickname in the current channel's guild.
     ///
     /// Refer to [`User::nick_in()`] inside and [`None`] outside of a guild.
@@ -815,7 +879,26 @@ impl Message {
 
     /// Retrieves the message channel's category ID if the channel has one.
     pub async fn category_id(&self, cache_http: impl CacheHttp) -> Option<ChannelId> {
-        self.channel_id.to_channel(cache_http).await.ok()?.guild()?.parent_id
+        #[cfg(feature = "cache")]
+        if let Some(cache) = cache_http.cache() {
+            if let Some(guild) = cache.guild(self.guild_id?) {
+                let channel = guild.channels.get(&self.channel_id)?;
+                return if channel.thread_metadata.is_some() {
+                    let thread_parent = guild.channels.get(&channel.parent_id?)?;
+                    thread_parent.parent_id
+                } else {
+                    channel.parent_id
+                };
+            }
+        }
+
+        let channel = self.channel_id.to_channel(&cache_http).await.ok()?.guild()?;
+        if channel.thread_metadata.is_some() {
+            let thread_parent = channel.parent_id?.to_channel(cache_http).await.ok()?.guild()?;
+            thread_parent.parent_id
+        } else {
+            channel.parent_id
+        }
     }
 }
 
@@ -851,13 +934,31 @@ impl<'a> From<&'a Message> for MessageId {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
 pub struct MessageReaction {
-    /// The amount of the type of reaction that have been sent for the associated message.
+    /// The amount of the type of reaction that have been sent for the associated message
+    /// including super reactions.
     pub count: u64,
-    /// Indicator of whether the current user has sent the type of reaction.
+    /// A breakdown of what reactions were from regular reactions and super reactions.
+    pub count_details: CountDetails,
+    /// Indicator of whether the current user has sent this type of reaction.
     pub me: bool,
+    /// Indicator of whether the current user has sent the type of super-reaction.
+    pub me_burst: bool,
     /// The type of reaction.
     #[serde(rename = "emoji")]
     pub reaction_type: ReactionType,
+    // The colours used for super reactions.
+    pub burst_colours: Vec<Colour>,
+}
+
+/// A representation of reaction count details.
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/channel#reaction-count-details-object).
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct CountDetails {
+    pub burst: u64,
+    pub normal: u64,
 }
 
 enum_number! {
@@ -1112,11 +1213,17 @@ impl MessageId {
 }
 
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum Nonce {
     String(String),
     Number(u64),
+}
+
+impl<'de> serde::Deserialize<'de> for Nonce {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> StdResult<Self, D::Error> {
+        Ok(StrOrInt::deserialize(deserializer)?.into_enum(Self::String, Self::Number))
+    }
 }
 
 /// [Discord docs](https://discord.com/developers/docs/resources/channel#role-subscription-data-object)
@@ -1131,4 +1238,131 @@ pub struct RoleSubscriptionData {
     pub total_months_subscribed: u16,
     /// Whether this notification is for a renewal rather than a new purchase.
     pub is_renewal: bool,
+}
+
+/// A poll that has been attached to a [`Message`].
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-object)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct Poll {
+    pub question: PollMedia,
+    pub answers: Vec<PollAnswer>,
+    pub expiry: Option<Timestamp>,
+    pub allow_multiselect: bool,
+    pub layout_type: PollLayoutType,
+    /// The results of the Poll.
+    ///
+    /// None does **not** mean that there are no results, simply that Discord has not provide them.
+    /// See the discord docs for a more detailed explaination.
+    pub results: Option<PollResults>,
+}
+
+/// A piece of data used in mutliple parts of the [`Poll`] structure.
+///
+/// Currently holds text and an optional emoji, but this is expected to change in future
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-media-object)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct PollMedia {
+    pub text: Option<String>,
+    pub emoji: Option<PollMediaEmoji>,
+}
+
+/// The "Partial Emoji" attached to a [`PollMedia`] model.
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-media-object)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PollMediaEmoji {
+    Name(String),
+    Id(EmojiId),
+}
+
+impl<'de> serde::Deserialize<'de> for PollMediaEmoji {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> StdResult<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct RawPollMediaEmoji {
+            name: Option<String>,
+            id: Option<EmojiId>,
+        }
+
+        let raw = RawPollMediaEmoji::deserialize(deserializer)?;
+        if let Some(name) = raw.name {
+            Ok(PollMediaEmoji::Name(name))
+        } else if let Some(id) = raw.id {
+            Ok(PollMediaEmoji::Id(id))
+        } else {
+            Err(serde::de::Error::duplicate_field("emoji"))
+        }
+    }
+}
+
+impl From<String> for PollMediaEmoji {
+    fn from(value: String) -> Self {
+        Self::Name(value)
+    }
+}
+
+impl From<EmojiId> for PollMediaEmoji {
+    fn from(value: EmojiId) -> Self {
+        Self::Id(value)
+    }
+}
+
+/// A possible answer for a [`Poll`].
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-answer-object)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct PollAnswer {
+    pub answer_id: AnswerId,
+    pub poll_media: PollMedia,
+}
+
+enum_number! {
+    /// Represents the different layouts that a [`Poll`] may have.
+    ///
+    /// Currently, there is only the one option.
+    ///
+    /// [Discord docs](https://discord.com/developers/docs/resources/poll#layout-type)
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+    #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+    #[serde(from = "u8", into = "u8")]
+    #[non_exhaustive]
+    pub enum PollLayoutType {
+        #[default]
+        Default = 1,
+        _ => Unknown(u8),
+    }
+}
+
+/// The model for the results of a [`Poll`].
+///
+/// If `is_finalized` is `false`, `answer_counts` will be inaccurate due to Discord's scale.
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-results-object-poll-results-object-structure)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct PollResults {
+    pub is_finalized: bool,
+    pub answer_counts: Vec<PollAnswerCount>,
+}
+
+/// The count of a single [`PollAnswer`]'s results.
+///
+/// [Discord docs](https://discord.com/developers/docs/resources/poll#poll-results-object-poll-answer-count-object-structure)
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[non_exhaustive]
+pub struct PollAnswerCount {
+    pub id: AnswerId,
+    pub count: u64,
+    pub me_voted: bool,
 }

@@ -53,6 +53,8 @@ use crate::gateway::{ActivityData, PresenceData};
 use crate::gateway::{ShardManager, ShardManagerOptions};
 use crate::http::Http;
 use crate::internal::prelude::*;
+#[cfg(feature = "gateway")]
+use crate::model::gateway::GatewayIntents;
 use crate::model::id::ApplicationId;
 use crate::model::user::OnlineStatus;
 
@@ -62,6 +64,7 @@ use crate::model::user::OnlineStatus;
 pub struct ClientBuilder {
     data: TypeMap,
     http: Http,
+    intents: GatewayIntents,
     #[cfg(feature = "cache")]
     cache_settings: CacheSettings,
     #[cfg(feature = "framework")]
@@ -75,10 +78,11 @@ pub struct ClientBuilder {
 
 #[cfg(feature = "gateway")]
 impl ClientBuilder {
-    fn _new(http: Http) -> Self {
+    fn _new(http: Http, intents: GatewayIntents) -> Self {
         Self {
             data: TypeMap::new(),
             http,
+            intents,
             #[cfg(feature = "cache")]
             cache_settings: CacheSettings::default(),
             #[cfg(feature = "framework")]
@@ -97,8 +101,8 @@ impl ClientBuilder {
     /// **Panic**: If you have enabled the `framework`-feature (on by default), you must specify a
     /// framework via the [`Self::framework`] method, otherwise awaiting the builder will cause a
     /// panic.
-    pub fn new(token: impl AsRef<str>) -> Self {
-        Self::_new(Http::new(token.as_ref()))
+    pub fn new(token: impl AsRef<str>, intents: GatewayIntents) -> Self {
+        Self::_new(Http::new(token.as_ref()), intents)
     }
 
     /// Construct a new builder with a [`Http`] instance to calls methods on for the client
@@ -107,8 +111,8 @@ impl ClientBuilder {
     /// **Panic**: If you have enabled the `framework`-feature (on by default), you must specify a
     /// framework via the [`Self::framework`] method, otherwise awaiting the builder will cause a
     /// panic.
-    pub fn new_with_http(http: Http) -> Self {
-        Self::_new(http)
+    pub fn new_with_http(http: Http, intents: GatewayIntents) -> Self {
+        Self::_new(http, intents)
     }
 
     /// Sets a token for the bot. If the token is not prefixed "Bot ", this method will
@@ -232,6 +236,37 @@ impl ClientBuilder {
         self.voice_manager.clone()
     }
 
+    /// Sets all intents directly, replacing already set intents. Intents are a bitflag, you can
+    /// combine them by performing the `|`-operator.
+    ///
+    /// # What are Intents
+    ///
+    /// A [gateway intent] sets the types of gateway events (e.g. member joins, guild integrations,
+    /// guild emoji updates, ...) the bot shall receive. Carefully picking the needed intents
+    /// greatly helps the bot to scale, as less intents will result in less events to be received
+    /// hence less processed by the bot.
+    ///
+    /// # Privileged Intents
+    ///
+    /// The intents [`GatewayIntents::GUILD_PRESENCES`], [`GatewayIntents::GUILD_MEMBERS`] and
+    /// [`GatewayIntents::MESSAGE_CONTENT`] are *privileged*. [Privileged intents] need to be
+    /// enabled in the *developer portal*. Once the bot is in 100 guilds or more, [the bot must be
+    /// verified] in order to use privileged intents.
+    ///
+    /// [gateway intent]: https://discord.com/developers/docs/topics/gateway#privileged-intents
+    /// [Privileged intents]: https://discord.com/developers/docs/topics/gateway#privileged-intents
+    /// [the bot must be verified]: https://support.discord.com/hc/en-us/articles/360040720412-Bot-Verification-and-Data-Whitelisting
+    pub fn intents(mut self, intents: GatewayIntents) -> Self {
+        self.intents = intents;
+
+        self
+    }
+
+    /// Gets the intents. See [`Self::intents`] for more info.
+    pub fn get_intents(&self) -> GatewayIntents {
+        self.intents
+    }
+
     /// Adds an event handler with multiple methods for each possible event.
     pub fn event_handler<H: EventHandler + 'static>(mut self, event_handler: H) -> Self {
         self.event_handlers.push(Arc::new(event_handler));
@@ -300,6 +335,7 @@ impl IntoFuture for ClientBuilder {
         let framework = self.framework;
         let event_handlers = self.event_handlers;
         let raw_event_handlers = self.raw_event_handlers;
+        let intents = self.intents;
         let presence = self.presence;
 
         let mut http = self.http;
@@ -343,11 +379,12 @@ impl IntoFuture for ClientBuilder {
                 shard_init: 0,
                 shard_total: 0,
                 #[cfg(feature = "voice")]
-                voice_manager: voice_manager.as_ref().map(Arc::clone),
+                voice_manager: voice_manager.clone(),
                 ws_url: Arc::clone(&ws_url),
                 #[cfg(feature = "cache")]
                 cache: Arc::clone(&cache),
                 http: Arc::clone(&http),
+                intents,
                 presence: Some(presence),
             });
 
@@ -588,8 +625,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn builder(token: impl AsRef<str>) -> ClientBuilder {
-        ClientBuilder::new(token)
+    pub fn builder(token: impl AsRef<str>, intents: GatewayIntents) -> ClientBuilder {
+        ClientBuilder::new(token, intents)
     }
 
     /// Establish the connection and start listening for events.

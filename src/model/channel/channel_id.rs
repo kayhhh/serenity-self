@@ -351,7 +351,7 @@ impl ChannelId {
         message_id: impl Into<MessageId>,
         builder: EditMessage,
     ) -> Result<Message> {
-        builder.execute(cache_http, (self, message_id.into())).await
+        builder.execute(cache_http, (self, message_id.into(), None)).await
     }
 
     /// Follows the News Channel
@@ -375,28 +375,28 @@ impl ChannelId {
     /// Attempts to find a [`GuildChannel`] by its Id in the cache.
     #[cfg(feature = "cache")]
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::channels instead"]
     pub fn to_channel_cached(self, cache: &Cache) -> Option<GuildChannelRef<'_>> {
-        cache.as_ref().channel(self)
+        #[allow(deprecated)]
+        cache.channel(self)
     }
 
-    /// First attempts to find a [`Channel`] by its Id in the cache, upon failure requests it via
-    /// the REST API.
+    /// First attempts to retrieve the channel from the `temp_cache` if enabled, otherwise performs
+    /// a HTTP request.
     ///
-    /// **Note**: If the `cache`-feature is enabled permissions will be checked and upon owning the
-    /// required permissions the HTTP-request will be issued. Additionally, you might want to
-    /// enable the `temp_cache` feature to cache channel data retrieved by this function for a
-    /// short duration.
+    /// It is recommended to first check if the channel is accessible via `Cache::guild` and
+    /// `Guild::members`, although this requires a `GuildId`.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Http`] if the channel retrieval request failed.
     #[inline]
     pub async fn to_channel(self, cache_http: impl CacheHttp) -> Result<Channel> {
-        #[cfg(feature = "cache")]
+        #[cfg(feature = "temp_cache")]
         {
             if let Some(cache) = cache_http.cache() {
-                if let Some(channel) = cache.channel(self) {
-                    return Ok(Channel::Guild(channel.clone()));
+                if let Some(channel) = cache.temp_channels.get(&self) {
+                    return Ok(Channel::Guild(GuildChannel::clone(&*channel)));
                 }
             }
         }
@@ -739,11 +739,7 @@ impl ChannelId {
         cache_http: impl CacheHttp,
         builder: CreateMessage,
     ) -> Result<Message> {
-        #[cfg(feature = "cache")]
-        let msg = builder.execute(cache_http, (self, None)).await;
-        #[cfg(not(feature = "cache"))]
-        let msg = builder.execute(cache_http, (self,)).await;
-        msg
+        builder.execute(cache_http, (self, None)).await
     }
 
     /// Starts typing in the channel for an indefinite period of time.
@@ -875,8 +871,6 @@ impl ChannelId {
     /// Creates a stage instance.
     ///
     /// # Errors
-    ///
-    /// Returns [`ModelError::InvalidChannelType`] if the channel is not a stage channel.
     ///
     /// Returns [`Error::Http`] if there is already a stage instance currently.
     pub async fn create_stage_instance(
@@ -1013,6 +1007,22 @@ impl ChannelId {
         http.as_ref().remove_thread_channel_member(self, user_id).await
     }
 
+    /// Gets a thread member, if this channel is a thread.
+    ///
+    /// `with_member` controls if ThreadMember::member should be `Some`
+    ///
+    /// # Errors
+    ///
+    /// It may return an [`Error::Http`] if the channel is not a thread channel
+    pub async fn get_thread_member(
+        self,
+        http: impl AsRef<Http>,
+        user_id: UserId,
+        with_member: bool,
+    ) -> Result<ThreadMember> {
+        http.as_ref().get_thread_channel_member(self, user_id, with_member).await
+    }
+
     /// Gets private archived threads of a channel.
     ///
     /// # Errors
@@ -1053,6 +1063,31 @@ impl ChannelId {
         limit: Option<u64>,
     ) -> Result<ThreadsData> {
         http.as_ref().get_channel_joined_archived_private_threads(self, before, limit).await
+    }
+
+    /// Get a list of users that voted for this specific answer.
+    ///
+    /// # Errors
+    ///
+    /// If the message does not have a poll.
+    pub async fn get_poll_answer_voters(
+        self,
+        http: impl AsRef<Http>,
+        message_id: MessageId,
+        answer_id: AnswerId,
+        after: Option<UserId>,
+        limit: Option<u8>,
+    ) -> Result<Vec<User>> {
+        http.as_ref().get_poll_answer_voters(self, message_id, answer_id, after, limit).await
+    }
+
+    /// Ends the [`Poll`] on a given [`MessageId`], if there is one.
+    ///
+    /// # Errors
+    ///
+    /// If the message does not have a poll, or if the poll was not created by the current user.
+    pub async fn end_poll(self, http: impl AsRef<Http>, message_id: MessageId) -> Result<Message> {
+        http.as_ref().expire_poll(self, message_id).await
     }
 }
 

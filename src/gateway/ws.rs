@@ -32,7 +32,7 @@ use crate::json::from_str;
 use crate::json::to_string;
 #[cfg(feature = "client")]
 use crate::model::event::GatewayEvent;
-use crate::model::gateway::ShardInfo;
+use crate::model::gateway::{GatewayIntents, ShardInfo};
 use crate::model::id::{GuildId, UserId};
 #[cfg(feature = "client")]
 use crate::Error;
@@ -74,6 +74,8 @@ enum WebSocketMessageData<'a> {
         compress: bool,
         token: &'a str,
         large_threshold: u8,
+        shard: &'a ShardInfo,
+        intents: GatewayIntents,
         properties: IdentifyProperties,
         presence: PresenceUpdateMessage<'a>,
     },
@@ -94,9 +96,9 @@ struct WebSocketMessage<'a> {
 pub struct WsClient(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 #[cfg(feature = "client")]
-const TIMEOUT: Duration = Duration::from_millis(5); // 500
+const TIMEOUT: Duration = Duration::from_millis(500);
 #[cfg(feature = "client")]
-const DECOMPRESSION_MULTIPLIER: usize = 1; // 3
+const DECOMPRESSION_MULTIPLIER: usize = 3;
 
 impl WsClient {
     pub(crate) async fn connect(url: Url) -> Result<Self> {
@@ -224,23 +226,27 @@ impl WsClient {
     #[instrument(skip(self, token))]
     pub async fn send_identify(
         &mut self,
+        shard: &ShardInfo,
         token: &str,
+        intents: GatewayIntents,
         presence: &PresenceData,
     ) -> Result<()> {
         let activities: Vec<_> = presence.activity.iter().collect();
         let now = SystemTime::now();
 
-        debug!("Identifying");
+        debug!("[{:?}] Identifying", shard);
 
         let msg = WebSocketMessage {
             op: Opcode::Identify,
             d: WebSocketMessageData::Identify {
                 token,
+                shard,
+                intents,
                 compress: true,
                 large_threshold: constants::LARGE_THRESHOLD,
                 properties: IdentifyProperties {
-                    browser: "serenity-self",
-                    device: "serenity-self",
+                    browser: "serenity",
+                    device: "serenity",
                     os: consts::OS,
                 },
                 presence: PresenceUpdateMessage {

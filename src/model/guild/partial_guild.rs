@@ -22,10 +22,6 @@ use crate::collector::{MessageCollector, ReactionCollector};
 use crate::gateway::ShardMessenger;
 #[cfg(feature = "model")]
 use crate::http::{CacheHttp, Http, UserPagination};
-#[cfg(feature = "model")]
-use crate::model::application::{Command, CommandPermissions};
-#[cfg(feature = "model")]
-use crate::model::guild::automod::Rule;
 use crate::model::prelude::*;
 #[cfg(feature = "model")]
 use crate::model::utils::icon_url;
@@ -381,21 +377,16 @@ impl PartialGuild {
     }
 
     #[cfg(feature = "cache")]
+    #[deprecated = "Use Cache::guild and Guild::channels"]
     pub fn channel_id_from_name(
         &self,
         cache: impl AsRef<Cache>,
         name: impl AsRef<str>,
     ) -> Option<ChannelId> {
-        let name = name.as_ref();
-        let guild_channels = cache.as_ref().guild_channels(self.id)?;
-
-        for (id, channel) in guild_channels.iter() {
-            if channel.name == name {
-                return Some(*id);
-            }
-        }
-
-        None
+        let cache = cache.as_ref();
+        let guild = cache.guild(self.id)?;
+        #[allow(deprecated)]
+        guild.channel_id_from_name(cache, name)
     }
 
     /// Creates a [`GuildChannel`] in the guild.
@@ -1029,91 +1020,57 @@ impl PartialGuild {
     /// [`position`]: Role::position
     #[cfg(feature = "cache")]
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::greater_member_hierarchy"]
     pub fn greater_member_hierarchy(
         &self,
         cache: impl AsRef<Cache>,
         lhs_id: impl Into<UserId>,
         rhs_id: impl Into<UserId>,
     ) -> Option<UserId> {
-        self._greater_member_hierarchy(&cache, lhs_id.into(), rhs_id.into())
-    }
-
-    #[cfg(feature = "cache")]
-    fn _greater_member_hierarchy(
-        &self,
-        cache: impl AsRef<Cache>,
-        lhs_id: UserId,
-        rhs_id: UserId,
-    ) -> Option<UserId> {
-        // Check that the IDs are the same. If they are, neither is greater.
-        if lhs_id == rhs_id {
-            return None;
-        }
-
-        // Check if either user is the guild owner.
-        if lhs_id == self.owner_id {
-            return Some(lhs_id);
-        } else if rhs_id == self.owner_id {
-            return Some(rhs_id);
-        }
-
-        let (lhs, rhs) = {
-            let cache = cache.as_ref();
-            let default = (RoleId::new(1), 0);
-
-            // Clone is necessary, highest_role_info goes into cache.
-            let (lhs, rhs) = {
-                let guild = cache.guild(self.id)?;
-                (guild.members.get(&lhs_id)?.clone(), guild.members.get(&rhs_id)?.clone())
-            };
-
-            (
-                lhs.highest_role_info(cache).unwrap_or(default),
-                rhs.highest_role_info(cache).unwrap_or(default),
-            )
-        };
-
-        // If LHS and RHS both have no top position or have the same role ID, then no one wins.
-        if (lhs.1 == 0 && rhs.1 == 0) || (lhs.0 == rhs.0) {
-            return None;
-        }
-
-        // If LHS's top position is higher than RHS, then LHS wins.
-        if lhs.1 > rhs.1 {
-            return Some(lhs_id);
-        }
-
-        // If RHS's top position is higher than LHS, then RHS wins.
-        if rhs.1 > lhs.1 {
-            return Some(rhs_id);
-        }
-
-        // If LHS and RHS both have the same position, but LHS has the lower role ID, then LHS
-        // wins.
-        //
-        // If RHS has the higher role ID, then RHS wins.
-        if lhs.1 == rhs.1 && lhs.0 < rhs.0 {
-            Some(lhs_id)
-        } else {
-            Some(rhs_id)
-        }
+        let cache = cache.as_ref();
+        let guild = cache.guild(self.id)?;
+        guild.greater_member_hierarchy(cache, lhs_id, rhs_id)
     }
 
     /// Calculate a [`Member`]'s permissions in the guild.
-    ///
-    /// If member caching is enabled the cache will be checked first. If not found it will resort
-    /// to an http request.
-    ///
-    /// Cache is still required to look up roles.
-    ///
-    /// # Errors
-    ///
-    /// See [`Guild::member`].
     #[inline]
     #[cfg(feature = "cache")]
     #[must_use]
     pub fn member_permissions(&self, member: &Member) -> Permissions {
-        Guild::_user_permissions_in(None, member, &self.roles, self.owner_id, self.id)
+        Guild::_user_permissions_in(
+            None,
+            member.user.id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
+    }
+
+    /// Calculate a [`PartialMember`]'s permissions in a given channel in a guild.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the passed [`UserId`] does not match the [`PartialMember`] id, if user is Some.
+    #[must_use]
+    pub fn partial_member_permissions_in(
+        &self,
+        channel: &GuildChannel,
+        member_id: UserId,
+        member: &PartialMember,
+    ) -> Permissions {
+        if let Some(user) = &member.user {
+            assert_eq!(user.id, member_id, "User::id does not match provided PartialMember");
+        }
+
+        Guild::_user_permissions_in(
+            Some(channel),
+            member_id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
     }
 
     /// Re-orders the channels of the guild.
@@ -1162,7 +1119,7 @@ impl PartialGuild {
     ///
     /// See the documentation on [`GuildPrune`] for more information.
     ///
-    /// **Note**: Requires the [Kick Members] permission.
+    /// **Note**: Requires [Kick Members] and [Manage Guild] permissions.
     ///
     /// # Errors
     ///
@@ -1174,6 +1131,7 @@ impl PartialGuild {
     /// Can also return an [`Error::Json`] if there is an error deserializing the API response.
     ///
     /// [Kick Members]: Permissions::KICK_MEMBERS
+    /// [Manage Guild]: Permissions::MANAGE_GUILD
     /// [`Error::Http`]: crate::error::Error::Http
     /// [`Error::Json`]: crate::error::Error::Json
     pub async fn start_prune(&self, cache_http: impl CacheHttp, days: u8) -> Result<GuildPrune> {
@@ -1351,14 +1309,17 @@ impl PartialGuild {
     }
 
     /// Calculate a [`Member`]'s permissions in a given channel in the guild.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Model`] if the Member has a non-existent [`Role`] for some reason.
     #[inline]
     #[must_use]
     pub fn user_permissions_in(&self, channel: &GuildChannel, member: &Member) -> Permissions {
-        Guild::_user_permissions_in(Some(channel), member, &self.roles, self.owner_id, self.id)
+        Guild::_user_permissions_in(
+            Some(channel),
+            member.user.id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
     }
 
     /// Calculate a [`Role`]'s permissions in a given channel in the guild.
