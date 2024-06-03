@@ -31,7 +31,7 @@ These deprecation messages include a migration path, it is recommended to go one
 - ([#2861](https://github.com/serenity-rs/serenity/pull/2861)) `TeamMember::permissions` is always `["*"]`, so is useless.
 
 ### Other notable changes
-- ([#2790](https://github.com/nshout/serenity-self/pull/5])) Added `CreateMessage::enforce_nonce`, to prevent sending duplicate messages.
+- ([#5](https://github.com/nshout/serenity-self/pull/5])) Remove-shard-manager-err-handling.
 - ([#2790](https://github.com/serenity-rs/serenity/pull/2790])) Added `CreateMessage::enforce_nonce`, to prevent sending duplicate messages.
 - ([#2801](https://github.com/serenity-rs/serenity/pull/2801)) Added `EditProfile::banner`, allowing banners to be set for bots.
 - ([#2810](https://github.com/serenity-rs/serenity/pull/2810)) Added `ChannelId::get_thread_member`.
