@@ -8,10 +8,10 @@
 //! Most models of Discord objects, such as the [`Message`], [`GuildChannel`], or [`Emoji`], have
 //! methods for interacting with that single instance. This feature is only compiled if the `model`
 //! feature is enabled. An example of this is [`Guild::edit`], which performs a check to ensure that
-//! the current user is the owner of the guild, prior to actually performing the HTTP request.
-//! The cache is involved due to the function's use of unlocking the cache and retrieving
-//! the Id of the current user, and comparing it to the Id of the user that owns the guild. This is
-//! an inexpensive method of being able to access data required by these sugary methods.
+//! the current user has the [Manage Guild] permission prior to actually performing the HTTP
+//! request. The cache is involved due to the function's use of unlocking the cache and retrieving
+//! the permissions of the current user. This is an inexpensive method of being able to access data
+//! required by these sugary methods.
 //!
 //! # Do I need the Cache?
 //!
@@ -22,8 +22,9 @@
 //!
 //! [`Shard`]: crate::gateway::Shard
 //! [`http`]: crate::http
+//! [Manage Guild]: Permissions::MANAGE_GUILD
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
 #[cfg(feature = "temp_cache")]
 use std::sync::Arc;
@@ -31,7 +32,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::mapref::entry::Entry;
-use dashmap::mapref::one::{MappedRef, MappedRefMut, Ref};
+use dashmap::mapref::one::{MappedRef, Ref};
 use dashmap::DashMap;
 #[cfg(feature = "temp_cache")]
 use mini_moka::sync::Cache as MokaCache;
@@ -159,6 +160,11 @@ pub struct Cache {
     /// The TTL for each value is configured in CacheSettings.
     #[cfg(feature = "temp_cache")]
     pub(crate) temp_channels: MokaCache<ChannelId, MaybeOwnedArc<GuildChannel>, BuildHasher>,
+    /// Cache of private channels created via create_dm_channel.
+    ///
+    /// The TTL for each value is configured in CacheSettings.
+    #[cfg(feature = "temp_cache")]
+    pub(crate) temp_private_channels: MokaCache<UserId, MaybeOwnedArc<PrivateChannel>, BuildHasher>,
     /// Cache of messages that have been fetched via message.
     ///
     /// The TTL for each value is configured in CacheSettings.
@@ -201,9 +207,6 @@ pub struct Cache {
     /// [`GuildMemberRemove`][`GuildMemberRemoveEvent`], as other structs such as members or
     /// recipients may still exist.
     pub(crate) users: MaybeMap<UserId, User>,
-    /// A map of users' presences. This is updated in real-time. Note that status updates are often
-    /// "eaten" by the gateway, and this should not be treated as being entirely 100% accurate.
-    pub(crate) presences: MaybeMap<UserId, Presence>,
 
     // Messages cache:
     // ---
@@ -263,6 +266,8 @@ impl Cache {
 
         Self {
             #[cfg(feature = "temp_cache")]
+            temp_private_channels: temp_cache(settings.time_to_live),
+            #[cfg(feature = "temp_cache")]
             temp_channels: temp_cache(settings.time_to_live),
             #[cfg(feature = "temp_cache")]
             temp_messages: temp_cache(settings.time_to_live),
@@ -275,7 +280,6 @@ impl Cache {
             unavailable_guilds: MaybeMap(settings.cache_guilds.then(DashMap::default)),
 
             users: MaybeMap(settings.cache_users.then(DashMap::default)),
-            presences: MaybeMap(settings.cache_users.then(DashMap::default)),
 
             messages: DashMap::default(),
             message_queue: DashMap::default(),
@@ -368,6 +372,7 @@ impl Cache {
 
     /// Retrieves a [`GuildChannel`] from the cache based on the given Id.
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::channels instead"]
     pub fn channel<C: Into<ChannelId>>(&self, id: C) -> Option<GuildChannelRef<'_>> {
         self._channel(id.into())
     }
@@ -388,15 +393,6 @@ impl Cache {
         }
 
         None
-    }
-
-    pub(super) fn channel_mut(
-        &self,
-        id: ChannelId,
-    ) -> Option<MappedRefMut<'_, GuildId, Guild, GuildChannel, BuildHasher>> {
-        let guild_id = *self.channels.get(&id)?;
-        let guild_ref = self.guilds.get_mut(&guild_id)?;
-        guild_ref.try_map(|g| g.channels.get_mut(&id)).ok()
     }
 
     /// Get a reference to the cached messages for a channel based on the given `Id`.
@@ -492,6 +488,7 @@ impl Cache {
     /// [`EventHandler::message`]: crate::client::EventHandler::message
     /// [`members`]: crate::model::guild::Guild::members
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::members instead"]
     pub fn member(
         &self,
         guild_id: impl Into<GuildId>,
@@ -506,6 +503,7 @@ impl Cache {
     }
 
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::roles instead"]
     pub fn guild_roles(&self, guild_id: impl Into<GuildId>) -> Option<GuildRolesRef<'_>> {
         self._guild_roles(guild_id.into())
     }
@@ -523,6 +521,7 @@ impl Cache {
 
     /// This method returns all channels from a guild of with the given `guild_id`.
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::channels instead"]
     pub fn guild_channels(&self, guild_id: impl Into<GuildId>) -> Option<GuildChannelsRef<'_>> {
         self._guild_channels(guild_id.into())
     }
@@ -608,6 +607,7 @@ impl Cache {
     /// [`Guild`]: crate::model::guild::Guild
     /// [`roles`]: crate::model::guild::Guild::roles
     #[inline]
+    #[deprecated = "Use Cache::guild and Guild::roles instead"]
     pub fn role<G, R>(&self, guild_id: G, role_id: R) -> Option<GuildRoleRef<'_>>
     where
         G: Into<GuildId>,
@@ -703,7 +703,9 @@ impl Cache {
     }
 
     /// Returns a channel category matching the given ID
+    #[deprecated = "Use Cache::guild, Guild::channels, and GuildChannel::kind"]
     pub fn category(&self, channel_id: ChannelId) -> Option<GuildChannelRef<'_>> {
+        #[allow(deprecated)]
         let channel = self.channel(channel_id)?;
         if channel.kind == ChannelType::Category {
             Some(channel)
@@ -713,7 +715,9 @@ impl Cache {
     }
 
     /// Returns the parent category of the given channel ID.
+    #[deprecated = "Use Cache::guild, Guild::channels, and GuildChannel::parent_id"]
     pub fn channel_category_id(&self, channel_id: ChannelId) -> Option<ChannelId> {
+        #[allow(deprecated)]
         self.channel(channel_id)?.parent_id
     }
 
@@ -767,7 +771,6 @@ impl Default for Cache {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
 
     use crate::cache::{Cache, CacheUpdate, Settings};
     use crate::model::prelude::*;

@@ -20,7 +20,7 @@ use super::{
 use crate::constants::{self, close_codes};
 use crate::internal::prelude::*;
 use crate::model::event::{Event, GatewayEvent};
-use crate::model::gateway::ShardInfo;
+use crate::model::gateway::{GatewayIntents, ShardInfo};
 use crate::model::id::{ApplicationId, GuildId};
 use crate::model::user::OnlineStatus;
 
@@ -74,6 +74,7 @@ pub struct Shard {
     pub started: Instant,
     pub token: String,
     ws_url: Arc<Mutex<String>>,
+    pub intents: GatewayIntents,
 }
 
 impl Shard {
@@ -121,6 +122,7 @@ impl Shard {
         ws_url: Arc<Mutex<String>>,
         token: &str,
         shard_info: ShardInfo,
+        intents: GatewayIntents,
         presence: Option<PresenceData>,
     ) -> Result<Shard> {
         let url = ws_url.lock().await.clone();
@@ -150,6 +152,7 @@ impl Shard {
             session_id,
             shard_info,
             ws_url,
+            intents,
         })
     }
 
@@ -420,7 +423,7 @@ impl Shard {
     /// The best case scenario is that one of two values is returned:
     /// - `Ok(None)`: a heartbeat, late hello, or session invalidation was received;
     /// - `Ok(Some((event, None)))`: an op0 dispatch was received, and the shard's voice state will
-    /// be updated, _if_ the `voice` feature is enabled.
+    ///   be updated, _if_ the `voice` feature is enabled.
     ///
     /// # Errors
     ///
@@ -674,7 +677,7 @@ impl Shard {
     #[instrument(skip(self))]
     pub async fn identify(&mut self) -> Result<()> {
         self.client
-            .send_identify(&self.token, &self.presence)
+            .send_identify(&self.shard_info, &self.token, self.intents, &self.presence)
             .await?;
 
         self.last_heartbeat_sent = Some(Instant::now());

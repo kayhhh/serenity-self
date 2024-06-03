@@ -35,7 +35,7 @@ use crate::model::prelude::*;
 /// ```
 ///
 /// [Discord docs](https://discord.com/developers/docs/resources/channel#edit-message)
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
 #[must_use]
 pub struct EditMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -221,7 +221,7 @@ impl EditMessage {
 #[cfg(feature = "http")]
 #[async_trait::async_trait]
 impl Builder for EditMessage {
-    type Context<'ctx> = (ChannelId, MessageId);
+    type Context<'ctx> = (ChannelId, MessageId, Option<UserId>);
     type Built = Message;
 
     /// Edits a message in the channel.
@@ -254,8 +254,24 @@ impl Builder for EditMessage {
     ) -> Result<Self::Built> {
         self.check_length()?;
 
+        #[cfg(feature = "cache")]
+        if let Some(user_id) = ctx.2 {
+            if let Some(cache) = cache_http.cache() {
+                let reference_builder = EditMessage::new().suppress_embeds(true);
+
+                if user_id != cache.current_user().id && self != reference_builder {
+                    return Err(Error::Model(ModelError::InvalidUser));
+                }
+            }
+        }
+
         let files = self.attachments.as_mut().map_or(Vec::new(), |a| a.take_files());
 
-        cache_http.http().edit_message(ctx.0, ctx.1, &self, files).await
+        let http = cache_http.http();
+        if self.allowed_mentions.is_none() {
+            self.allowed_mentions.clone_from(&http.default_allowed_mentions);
+        }
+
+        http.edit_message(ctx.0, ctx.1, &self, files).await
     }
 }

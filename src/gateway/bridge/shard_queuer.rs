@@ -30,7 +30,7 @@ use crate::gateway::{ConnectionStage, PresenceData, Shard, ShardRunnerMessage};
 use crate::http::Http;
 use crate::internal::prelude::*;
 use crate::internal::tokio::spawn_named;
-use crate::model::gateway::ShardInfo;
+use crate::model::gateway::{GatewayIntents, ShardInfo};
 
 const WAIT_BETWEEN_BOOTS_IN_SECONDS: u64 = 5;
 
@@ -76,6 +76,7 @@ pub struct ShardQueuer {
     #[cfg(feature = "cache")]
     pub cache: Arc<Cache>,
     pub http: Arc<Http>,
+    pub intents: GatewayIntents,
     pub presence: Option<PresenceData>,
 }
 
@@ -169,6 +170,7 @@ impl ShardQueuer {
             Arc::clone(&self.ws_url),
             self.http.token(),
             shard_info,
+            self.intents,
             self.presence.clone(),
         )
         .await?;
@@ -181,7 +183,7 @@ impl ShardQueuer {
             event_handlers: self.event_handlers.clone(),
             raw_event_handlers: self.raw_event_handlers.clone(),
             #[cfg(feature = "framework")]
-            framework: self.framework.get().map(Arc::clone),
+            framework: self.framework.get().cloned(),
             manager: Arc::clone(&self.manager),
             #[cfg(feature = "voice")]
             voice_manager: self.voice_manager.clone(),
@@ -228,9 +230,9 @@ impl ShardQueuer {
 
     /// Attempts to shut down the shard runner by Id.
     ///
-    /// **Note**: If the receiving end of an mpsc channel - theoretically owned by the shard runner
-    /// - no longer exists, then the shard runner will not know it should shut down. This _should
-    /// never happen_. It may already be stopped.
+    /// **Note**: If the receiving end of an mpsc channel - owned by the shard runner - no longer
+    /// exists, then the shard runner will not know it should shut down. This _should never happen_.
+    /// It may already be stopped.
     #[instrument(skip(self))]
     pub async fn shutdown(&mut self, shard_id: ShardId, code: u16) {
         info!("Shutting down shard {}", shard_id);

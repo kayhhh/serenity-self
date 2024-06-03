@@ -11,7 +11,7 @@
 //! Permissions follow a hierarchy:
 //! - An account can grant roles to users that are of a lower position than its highest role;
 //! - An account can edit roles lesser than its highest role, but can only grant permissions they
-//! have;
+//!   have;
 //! - An account can move only roles lesser than its highest role;
 //! - An account can only kick/ban accounts with a lesser role than its top role.
 //!
@@ -38,8 +38,10 @@
 #[cfg(feature = "model")]
 use std::fmt;
 
-use serde::de::{Deserialize, Deserializer, Error as DeError};
+use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
+
+use super::utils::StrOrInt;
 
 /// This macro generates the [`Permissions::get_permission_names`] method.
 ///
@@ -220,6 +222,7 @@ pub const PRESET_VOICE: Permissions = Permissions::from_bits_truncate(
 /// [`User`]: super::user::User
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
 #[derive(Copy, Clone, Default, Debug, Eq, Hash, PartialEq)]
+#[repr(packed)]
 pub struct Permissions(u64);
 
 bitflags::bitflags! {
@@ -357,9 +360,10 @@ bitflags::bitflags! {
         const USE_EXTERNAL_SOUNDS = 1 << 45;
         /// Allows sending voice messages.
         const SEND_VOICE_MESSAGES = 1 << 46;
-        // Allows setting the status of a voice channel.
+        /// Allows setting the status of a voice channel.
         const SET_VOICE_CHANNEL_STATUS = 1 << 48;
-
+        /// Allows attaching polls to message sends.
+        const SEND_POLLS = 1 << 49;
     }
 }
 
@@ -798,15 +802,24 @@ impl Permissions {
     pub const fn use_vad(self) -> bool {
         self.contains(Self::USE_VAD)
     }
+
+    /// Shorthand for checking that the set of permissions contains the [Send Polls] permission.
+    ///
+    /// [Send Polls]: Self::SEND_POLLS
+    #[must_use]
+    pub const fn send_polls(self) -> bool {
+        self.contains(Self::SEND_POLLS)
+    }
 }
 
-// Manual impl needed because Permissions are sent as a stringified integer
+// Manual impl needed because Permissions are usually sent as a stringified integer,
+// but audit log changes are sent as an int, which is probably a problem.
 impl<'de> Deserialize<'de> for Permissions {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let permissions_str = String::deserialize(deserializer)?;
-        let permissions_num = permissions_str.parse().map_err(DeError::custom)?;
+        let val = StrOrInt::deserialize(deserializer)?;
+        let val = val.parse().map_err(serde::de::Error::custom)?;
 
-        Ok(Permissions::from_bits_truncate(permissions_num))
+        Ok(Permissions::from_bits_truncate(val))
     }
 }
 

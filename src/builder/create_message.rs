@@ -1,3 +1,4 @@
+use super::create_poll::Ready;
 #[cfg(feature = "http")]
 use super::{check_overflow, Builder};
 use super::{
@@ -5,6 +6,7 @@ use super::{
     CreateAllowedMentions,
     CreateAttachment,
     CreateEmbed,
+    CreatePoll,
     EditAttachments,
 };
 #[cfg(feature = "http")]
@@ -67,7 +69,10 @@ pub struct CreateMessage {
     sticker_ids: Vec<StickerId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     flags: Option<MessageFlags>,
-    attachments: EditAttachments,
+    pub(crate) attachments: EditAttachments,
+    enforce_nonce: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poll: Option<CreatePoll<super::create_poll::Ready>>,
 
     // The following fields are handled separately.
     #[serde(skip)]
@@ -273,8 +278,24 @@ impl CreateMessage {
 
     /// Can be used to verify a message was sent (up to 25 characters). Value will appear in
     /// [`Message::nonce`]
+    ///
+    /// See [`Self::enforce_nonce`] if you would like discord to perform de-duplication.
     pub fn nonce(mut self, nonce: Nonce) -> Self {
         self.nonce = Some(nonce);
+        self
+    }
+
+    /// If true and [`Self::nonce`] is provided, it will be checked for uniqueness in the past few
+    /// minutes. If another message was created by the same author with the same nonce, that
+    /// message will be returned and no new message will be created.
+    pub fn enforce_nonce(mut self, enforce_nonce: bool) -> Self {
+        self.enforce_nonce = enforce_nonce;
+        self
+    }
+
+    /// Sets the [`Poll`] for this message.
+    pub fn poll(mut self, poll: CreatePoll<Ready>) -> Self {
+        self.poll = Some(poll);
         self
     }
 }
@@ -282,10 +303,7 @@ impl CreateMessage {
 #[cfg(feature = "http")]
 #[async_trait::async_trait]
 impl Builder for CreateMessage {
-    #[cfg(feature = "cache")]
     type Context<'ctx> = (ChannelId, Option<GuildId>);
-    #[cfg(not(feature = "cache"))]
-    type Context<'ctx> = (ChannelId,);
     type Built = Message;
 
     /// Send a message to the channel.
@@ -308,12 +326,8 @@ impl Builder for CreateMessage {
     async fn execute(
         mut self,
         cache_http: impl CacheHttp,
-        ctx: Self::Context<'_>,
+        (channel_id, guild_id): Self::Context<'_>,
     ) -> Result<Self::Built> {
-        let channel_id = ctx.0;
-        #[cfg(feature = "cache")]
-        let guild_id = ctx.1;
-
         #[cfg(feature = "cache")]
         {
             let mut req = Permissions::SEND_MESSAGES;
@@ -330,6 +344,9 @@ impl Builder for CreateMessage {
         let http = cache_http.http();
 
         let files = self.attachments.take_files();
+        if self.allowed_mentions.is_none() {
+            self.allowed_mentions.clone_from(&http.default_allowed_mentions);
+        }
 
         #[cfg_attr(not(feature = "cache"), allow(unused_mut))]
         let mut message = http.send_message(channel_id, files, &self).await?;
@@ -339,12 +356,9 @@ impl Builder for CreateMessage {
         }
 
         // HTTP sent Messages don't have guild_id set, so we fill it in ourselves by best effort
-        #[cfg(feature = "cache")]
         if message.guild_id.is_none() {
-            // Use either the passed in guild ID (e.g. if we were called from GuildChannel directly
-            // we already know our guild ID), and otherwise find the guild ID in cache
-            message.guild_id = guild_id
-                .or_else(|| Some(cache_http.cache()?.channel(message.channel_id)?.guild_id));
+            // If we were called from GuildChannel, we can fill in the GuildId ourselves.
+            message.guild_id = guild_id;
         }
 
         Ok(message)

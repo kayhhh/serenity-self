@@ -222,15 +222,18 @@ fn clean_mention(
     let cache = cache.as_ref();
     match mention {
         Mention::Channel(id) => {
+            #[allow(deprecated)] // This is reworked on next already.
             if let Some(channel) = id.to_channel_cached(cache) {
                 format!("#{}", channel.name).into()
             } else {
                 "#deleted-channel".into()
             }
         },
-        Mention::Role(id) => id
-            .to_role_cached(cache)
-            .map_or(Cow::Borrowed("@deleted-role"), |role| format!("@{}", role.name).into()),
+        Mention::Role(id) => options
+            .guild_reference
+            .and_then(|id| cache.guild(id))
+            .and_then(|g| g.roles.get(&id).map(|role| format!("@{}", role.name).into()))
+            .unwrap_or(Cow::Borrowed("@deleted-role")),
         Mention::User(id) => {
             if let Some(guild_id) = options.guild_reference {
                 if let Some(guild) = cache.guild(guild_id) {
@@ -272,7 +275,6 @@ mod tests {
     use crate::model::channel::*;
     use crate::model::guild::*;
     use crate::model::id::{ChannelId, RoleId, UserId};
-    use crate::model::user::User;
 
     #[test]
     fn test_content_safe() {

@@ -1,7 +1,6 @@
 #![allow(clippy::missing_errors_doc)]
 
 use std::borrow::Cow;
-use std::convert::TryFrom;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -28,12 +27,10 @@ use super::{
     MessagePagination,
     UserPagination,
 };
-use crate::builder::CreateAttachment;
+use crate::builder::{CreateAllowedMentions, CreateAttachment};
 use crate::constants;
 use crate::internal::prelude::*;
 use crate::json::*;
-use crate::model::application::{Command, CommandPermissions};
-use crate::model::guild::automod::Rule;
 use crate::model::prelude::*;
 
 /// A builder for the underlying [`Http`] client that performs requests to Discord's HTTP API. If
@@ -59,6 +56,7 @@ pub struct HttpBuilder {
     token: SecretString,
     proxy: Option<String>,
     application_id: Option<ApplicationId>,
+    default_allowed_mentions: Option<CreateAllowedMentions>,
 }
 
 impl HttpBuilder {
@@ -72,6 +70,7 @@ impl HttpBuilder {
             token: SecretString::new(parse_token(token)),
             proxy: None,
             application_id: None,
+            default_allowed_mentions: None,
         }
     }
 
@@ -130,6 +129,15 @@ impl HttpBuilder {
         self
     }
 
+    /// Sets the [`CreateAllowedMentions`] used by default for each request that would use it.
+    ///
+    /// This only takes effect if you are calling through the model or builder methods, not directly
+    /// calling [`Http`] methods, as [`Http`] is simply used as a convenient storage for these.
+    pub fn default_allowed_mentions(mut self, allowed_mentions: CreateAllowedMentions) -> Self {
+        self.default_allowed_mentions = Some(allowed_mentions);
+        self
+    }
+
     /// Use the given configuration to build the `Http` client.
     #[must_use]
     pub fn build(self) -> Http {
@@ -151,6 +159,7 @@ impl HttpBuilder {
             proxy: self.proxy,
             token: self.token,
             application_id,
+            default_allowed_mentions: self.default_allowed_mentions,
         }
     }
 }
@@ -189,6 +198,7 @@ pub struct Http {
     pub proxy: Option<String>,
     token: SecretString,
     application_id: AtomicU64,
+    pub default_allowed_mentions: Option<CreateAllowedMentions>,
 }
 
 impl Http {
@@ -289,6 +299,8 @@ impl Http {
         delete_message_days: u8,
         reason: Option<&str>,
     ) -> Result<()> {
+        let delete_message_seconds = u32::from(delete_message_days) * 86400;
+
         self.wind(204, Request {
             body: None,
             multipart: None,
@@ -298,7 +310,29 @@ impl Http {
                 guild_id,
                 user_id,
             },
-            params: Some(vec![("delete_message_days", delete_message_days.to_string())]),
+            params: Some(vec![("delete_message_seconds", delete_message_seconds.to_string())]),
+        })
+        .await
+    }
+
+    /// Bans multiple users from a [`Guild`], optionally removing their messages.
+    ///
+    /// See the [Discord Docs](https://github.com/discord/discord-api-docs/pull/6720) for more information.
+    pub async fn bulk_ban_users(
+        &self,
+        guild_id: GuildId,
+        map: &impl serde::Serialize,
+        reason: Option<&str>,
+    ) -> Result<BulkBanResponse> {
+        self.fire(Request {
+            body: Some(to_vec(map)?),
+            multipart: None,
+            headers: reason.map(reason_into_header),
+            method: LightMethod::Post,
+            route: Route::GuildBulkBan {
+                guild_id,
+            },
+            params: None,
         })
         .await
     }
@@ -416,18 +450,31 @@ impl Http {
         .await
     }
 
-    /// Creates a forum post channel in the [`GuildChannel`] given its Id.
+    /// Shortcut for [`Self::create_forum_post_with_attachments`]
     pub async fn create_forum_post(
         &self,
         channel_id: ChannelId,
         map: &impl serde::Serialize,
         audit_log_reason: Option<&str>,
     ) -> Result<GuildChannel> {
-        let body = to_vec(map)?;
+        self.create_forum_post_with_attachments(channel_id, map, vec![], audit_log_reason).await
+    }
 
+    /// Creates a forum post channel in the [`GuildChannel`] given its Id.
+    pub async fn create_forum_post_with_attachments(
+        &self,
+        channel_id: ChannelId,
+        map: &impl serde::Serialize,
+        files: Vec<CreateAttachment>,
+        audit_log_reason: Option<&str>,
+    ) -> Result<GuildChannel> {
         self.fire(Request {
-            body: Some(body),
-            multipart: None,
+            body: None,
+            multipart: Some(Multipart {
+                upload: MultipartUpload::Attachments(files.into_iter().collect()),
+                payload_json: Some(to_string(map)?),
+                fields: vec![],
+            }),
             headers: audit_log_reason.map(reason_into_header),
             method: LightMethod::Post,
             route: Route::ChannelForumPosts {
@@ -768,12 +815,12 @@ impl Http {
         .await
     }
 
-    /// Reacts to a message.
-    pub async fn create_reaction(
+    async fn _create_reaction(
         &self,
         channel_id: ChannelId,
         message_id: MessageId,
         reaction_type: &ReactionType,
+        burst: bool,
     ) -> Result<()> {
         self.wind(204, Request {
             body: None,
@@ -785,9 +832,29 @@ impl Http {
                 message_id,
                 reaction: &reaction_type.as_data(),
             },
-            params: None,
+            params: Some(vec![("burst", burst.to_string())]),
         })
         .await
+    }
+
+    /// Reacts to a message.
+    pub async fn create_reaction(
+        &self,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        reaction_type: &ReactionType,
+    ) -> Result<()> {
+        self._create_reaction(channel_id, message_id, reaction_type, false).await
+    }
+
+    /// Super reacts to a message.
+    pub async fn create_super_reaction(
+        &self,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        reaction_type: &ReactionType,
+    ) -> Result<()> {
+        self._create_reaction(channel_id, message_id, reaction_type, true).await
     }
 
     /// Creates a role.
@@ -867,6 +934,36 @@ impl Http {
             method: LightMethod::Post,
             route: Route::GuildStickers {
                 guild_id,
+            },
+            params: None,
+        })
+        .await
+    }
+
+    /// Creates a test entitlement to a given SKU for a given guild or user. Discord will act as
+    /// though that user/guild has entitlement in perpetuity to the SKU. As a result, the returned
+    /// entitlement will have `starts_at` and `ends_at` both be `None`.
+    pub async fn create_test_entitlement(
+        &self,
+        sku_id: SkuId,
+        owner: EntitlementOwner,
+    ) -> Result<Entitlement> {
+        let (owner_id, owner_type) = match owner {
+            EntitlementOwner::Guild(id) => (id.get(), 1),
+            EntitlementOwner::User(id) => (id.get(), 2),
+        };
+        let map = json!({
+            "sku_id": sku_id,
+            "owner_id": owner_id,
+            "owner_type": owner_type
+        });
+        self.fire(Request {
+            body: Some(to_vec(&map)?),
+            multipart: None,
+            headers: None,
+            method: LightMethod::Post,
+            route: Route::Entitlements {
+                application_id: self.try_application_id()?,
             },
             params: None,
         })
@@ -1343,6 +1440,23 @@ impl Http {
             route: Route::GuildSticker {
                 guild_id,
                 sticker_id,
+            },
+            params: None,
+        })
+        .await
+    }
+
+    /// Deletes a currently active test entitlement. Discord will act as though the corresponding
+    /// user/guild *no longer has* an entitlement to the corresponding SKU.
+    pub async fn delete_test_entitlement(&self, entitlement_id: EntitlementId) -> Result<()> {
+        self.wind(204, Request {
+            body: None,
+            multipart: None,
+            headers: None,
+            method: LightMethod::Delete,
+            route: Route::Entitlement {
+                application_id: self.try_application_id()?,
+                entitlement_id,
             },
             params: None,
         })
@@ -2931,6 +3045,26 @@ impl Http {
         .await
     }
 
+    pub async fn get_thread_channel_member(
+        &self,
+        channel_id: ChannelId,
+        user_id: UserId,
+        with_member: bool,
+    ) -> Result<ThreadMember> {
+        self.fire(Request {
+            body: None,
+            multipart: None,
+            headers: None,
+            method: LightMethod::Get,
+            route: Route::ChannelThreadMember {
+                channel_id,
+                user_id,
+            },
+            params: Some(vec![("with_member", with_member.to_string())]),
+        })
+        .await
+    }
+
     /// Retrieves the webhooks for the given [channel][`GuildChannel`]'s Id.
     ///
     /// This method requires authentication.
@@ -3010,6 +3144,66 @@ impl Http {
         .await
     }
 
+    /// Get a list of users that voted for this specific answer.
+    pub async fn get_poll_answer_voters(
+        &self,
+        channel_id: ChannelId,
+        message_id: MessageId,
+        answer_id: AnswerId,
+        after: Option<UserId>,
+        limit: Option<u8>,
+    ) -> Result<Vec<User>> {
+        #[derive(serde::Deserialize)]
+        struct VotersResponse {
+            users: Vec<User>,
+        }
+
+        let mut params = Vec::with_capacity(2);
+        if let Some(after) = after {
+            params.push(("after", after.to_string()));
+        }
+
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+
+        let resp: VotersResponse = self
+            .fire(Request {
+                body: None,
+                multipart: None,
+                headers: None,
+                method: LightMethod::Get,
+                route: Route::ChannelPollGetAnswerVoters {
+                    channel_id,
+                    message_id,
+                    answer_id,
+                },
+                params: Some(params),
+            })
+            .await?;
+
+        Ok(resp.users)
+    }
+
+    pub async fn expire_poll(
+        &self,
+        channel_id: ChannelId,
+        message_id: MessageId,
+    ) -> Result<Message> {
+        self.fire(Request {
+            body: None,
+            multipart: None,
+            headers: None,
+            method: LightMethod::Post,
+            route: Route::ChannelPollExpire {
+                channel_id,
+                message_id,
+            },
+            params: None,
+        })
+        .await
+    }
+
     /// Gets information about the current application.
     ///
     /// **Note**: Only applications may use this endpoint.
@@ -3065,6 +3259,57 @@ impl Http {
                 emoji_id,
             },
             params: None,
+        })
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Gets all entitlements for the current app, active and expired.
+    pub async fn get_entitlements(
+        &self,
+        user_id: Option<UserId>,
+        sku_ids: Option<Vec<SkuId>>,
+        before: Option<EntitlementId>,
+        after: Option<EntitlementId>,
+        limit: Option<u8>,
+        guild_id: Option<GuildId>,
+        exclude_ended: Option<bool>,
+    ) -> Result<Vec<Entitlement>> {
+        let mut params = vec![];
+        if let Some(user_id) = user_id {
+            params.push(("user_id", user_id.to_string()));
+        }
+        if let Some(sku_ids) = sku_ids {
+            params.push((
+                "sku_ids",
+                sku_ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
+            ));
+        }
+        if let Some(before) = before {
+            params.push(("before", before.to_string()));
+        }
+        if let Some(after) = after {
+            params.push(("after", after.to_string()));
+        }
+        if let Some(limit) = limit {
+            params.push(("limit", limit.to_string()));
+        }
+        if let Some(guild_id) = guild_id {
+            params.push(("guild_id", guild_id.to_string()));
+        }
+        if let Some(exclude_ended) = exclude_ended {
+            params.push(("exclude_ended", exclude_ended.to_string()));
+        }
+
+        self.fire(Request {
+            body: None,
+            multipart: None,
+            headers: None,
+            method: LightMethod::Get,
+            route: Route::Entitlements {
+                application_id: self.try_application_id()?,
+            },
+            params: Some(params),
         })
         .await
     }
@@ -3748,8 +3993,8 @@ impl Http {
     ///
     /// # Arguments
     /// * `code` - The invite code.
-    /// * `member_counts` - Whether to include information about the current number
-    /// of members in the server that the invite belongs to.
+    /// * `member_counts` - Whether to include information about the current number of members in
+    ///   the server that the invite belongs to.
     /// * `expiration` - Whether to include information about when the invite expires.
     /// * `event_id` - An optional server event ID to include with the invite.
     ///
@@ -3919,6 +4164,21 @@ impl Http {
                 reaction: &reaction_type.as_data(),
             },
             params: Some(params),
+        })
+        .await
+    }
+
+    /// Gets all SKUs for the current application.
+    pub async fn get_skus(&self) -> Result<Vec<Sku>> {
+        self.fire(Request {
+            body: None,
+            multipart: None,
+            headers: None,
+            method: LightMethod::Get,
+            route: Route::Skus {
+                application_id: self.try_application_id()?,
+            },
+            params: None,
         })
         .await
     }

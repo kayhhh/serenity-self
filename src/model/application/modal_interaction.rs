@@ -1,4 +1,3 @@
-use serde::de::{Deserialize, Deserializer};
 use serde::Serialize;
 
 #[cfg(feature = "model")]
@@ -59,6 +58,8 @@ pub struct ModalInteraction {
     pub locale: String,
     /// The guild's preferred locale.
     pub guild_locale: Option<String>,
+    /// For monetized applications, any entitlements of the invoking user.
+    pub entitlements: Vec<Entitlement>,
 }
 
 #[cfg(feature = "model")]

@@ -1,5 +1,6 @@
 #[cfg(feature = "model")]
 use reqwest::Client as ReqwestClient;
+use serde_cow::CowStr;
 
 #[cfg(feature = "model")]
 use crate::internal::prelude::*;
@@ -13,10 +14,10 @@ where
     use base64::Engine as _;
     use serde::de::Error;
 
-    let base64 = <Option<String>>::deserialize(deserializer)?;
+    let base64 = <Option<CowStr<'de>>>::deserialize(deserializer)?;
     let bytes = match base64 {
-        Some(base64) => {
-            Some(base64::prelude::BASE64_STANDARD.decode(base64).map_err(D::Error::custom)?)
+        Some(CowStr(base64)) => {
+            Some(base64::prelude::BASE64_STANDARD.decode(&*base64).map_err(D::Error::custom)?)
         },
         None => None,
     };
@@ -37,7 +38,7 @@ pub struct Attachment {
     /// The filename of the file that was uploaded. This is equivalent to what the uploader had
     /// their file named.
     pub filename: String,
-    /// Sescription for the file (max 1024 characters).
+    /// Description for the file (max 1024 characters).
     pub description: Option<String>,
     /// If the attachment is an image, then the height of the image is provided.
     pub height: Option<u32>,

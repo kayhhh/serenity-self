@@ -5,6 +5,7 @@
 //! Example 7 is needed because tracing is being used.
 //! Example 12 is needed because global data and atomic are used.
 //! Example 13 is needed for the parallel loops that are running to update data from the dashboard.
+#![allow(deprecated)] // We recommend migrating to poise, instead of using the standard command framework.
 
 // be lazy, import all macros globally!
 #[macro_use]
@@ -20,12 +21,11 @@ use std::time::Instant;
 use rillrate::prime::table::{Col, Row};
 use rillrate::prime::*;
 use serenity::async_trait;
-use serenity::client::{Client, Context, EventHandler};
 use serenity::framework::standard::macros::{command, group, hook};
 use serenity::framework::standard::{CommandResult, Configuration, StandardFramework};
+use serenity::gateway::ShardManager;
 use serenity::model::prelude::*;
 use serenity::prelude::*;
-use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
 // Name used to group dashboards.
@@ -73,6 +73,12 @@ impl TypeMapKey for RillRateComponents {
     // it's being done with `command_usage_values` this will make it considerably less likely to
     // deadlock.
     type Value = Arc<Components>;
+}
+
+struct ShardManagerContainer;
+
+impl TypeMapKey for ShardManagerContainer {
+    type Value = Arc<ShardManager>;
 }
 
 #[group]
@@ -404,11 +410,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         command_usage_values: Mutex::new(command_usage_values),
     });
 
-    let mut client = Client::builder(token)
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(token, intents)
         .event_handler(Handler)
         .framework(framework)
         .type_map_insert::<RillRateComponents>(components)
         .await?;
+
+    {
+        let mut data = client.data.write().await;
+
+        data.insert::<ShardManagerContainer>(Arc::clone(&client.shard_manager));
+    }
 
     client.start().await?;
 

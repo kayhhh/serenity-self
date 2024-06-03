@@ -1,3 +1,5 @@
+#![allow(deprecated)] // We recommend migrating to poise, instead of using the standard command framework.
+
 use std::env;
 
 use serenity::async_trait;
@@ -67,7 +69,10 @@ async fn main() {
     let framework = StandardFramework::new().before(before).group(&GENERAL_GROUP);
     framework.configure(Configuration::new().prefix("~"));
 
-    let mut client = Client::builder(&token)
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::DIRECT_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT;
+    let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .framework(framework)
         .await

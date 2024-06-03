@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::mem::Discriminant;
 use std::num::NonZeroU64;
 
 use crate::model::id::*;
@@ -59,10 +60,13 @@ macro_rules! routes {
                     )+
                 };
 
-                // To avoid adding a lifetime on RatelimitingBucket and causing lifetime infection,
-                // we transmute the Discriminant<Route<'a>> to Discriminant<Route<'static>>.
+                // This avoids adding a lifetime on RatelimitingBucket and causing lifetime infection
                 // SAFETY: std::mem::discriminant erases lifetimes.
-                let discriminant = unsafe { std::mem::transmute(std::mem::discriminant(self)) };
+                let discriminant = unsafe {
+                    std::mem::transmute::<Discriminant<Route<'a>>, Discriminant<Route<'static>>>(
+                        std::mem::discriminant(self),
+                    )
+                };
 
                 RatelimitingBucket(ratelimiting_kind.map(|r| {
                     let id = match r {
@@ -182,6 +186,14 @@ routes! ('a, {
     api!("/channels/{}/users/@me/threads/archived/private", channel_id),
     Some(RatelimitingKind::PathAndId(channel_id.into()));
 
+    ChannelPollGetAnswerVoters { channel_id: ChannelId, message_id: MessageId, answer_id: AnswerId },
+    api!("/channels/{}/polls/{}/answers/{}", channel_id, message_id, answer_id),
+    Some(RatelimitingKind::PathAndId(channel_id.into()));
+
+    ChannelPollExpire { channel_id: ChannelId, message_id: MessageId },
+    api!("/channels/{}/polls/{}/expire", channel_id, message_id),
+    Some(RatelimitingKind::PathAndId(channel_id.into()));
+
     Gateway,
     api!("/gateway"),
     Some(RatelimitingKind::Path);
@@ -208,6 +220,10 @@ routes! ('a, {
 
     GuildBan { guild_id: GuildId, user_id: UserId },
     api!("/guilds/{}/bans/{}", guild_id, user_id),
+    Some(RatelimitingKind::PathAndId(guild_id.into()));
+
+    GuildBulkBan { guild_id: GuildId },
+    api!("/guilds/{}/bulk-ban", guild_id),
     Some(RatelimitingKind::PathAndId(guild_id.into()));
 
     GuildBans { guild_id: GuildId },
@@ -448,6 +464,18 @@ routes! ('a, {
 
     GuildCommandsPermissions { application_id: ApplicationId, guild_id: GuildId },
     api!("/applications/{}/guilds/{}/commands/permissions", application_id, guild_id),
+    Some(RatelimitingKind::PathAndId(application_id.into()));
+
+    Skus { application_id: ApplicationId },
+    api!("/applications/{}/skus", application_id),
+    Some(RatelimitingKind::PathAndId(application_id.into()));
+
+    Entitlement { application_id: ApplicationId, entitlement_id: EntitlementId },
+    api!("/applications/{}/entitlements/{}", application_id, entitlement_id),
+    Some(RatelimitingKind::PathAndId(application_id.into()));
+
+    Entitlements { application_id: ApplicationId },
+    api!("/applications/{}/entitlements", application_id),
     Some(RatelimitingKind::PathAndId(application_id.into()));
 
     StageInstances,

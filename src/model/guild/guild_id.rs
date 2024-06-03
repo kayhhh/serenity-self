@@ -33,10 +33,7 @@ use crate::http::{CacheHttp, Http, UserPagination};
 use crate::internal::prelude::*;
 #[cfg(feature = "model")]
 use crate::json::json;
-#[cfg(feature = "model")]
-use crate::model::application::{Command, CommandPermissions};
-#[cfg(feature = "model")]
-use crate::model::guild::automod::Rule;
+use crate::model::guild::SerializeIter;
 use crate::model::prelude::*;
 
 #[cfg(feature = "model")]
@@ -251,6 +248,37 @@ impl GuildId {
         }
 
         http.as_ref().ban_user(self, user, dmd, reason).await
+    }
+
+    /// Bans multiple users from the guild, returning the users that were and weren't banned, and
+    /// optionally deleting messages that are younger than the provided `delete_message_seconds`.
+    ///
+    /// # Errors
+    ///
+    /// Errors if none of the users are banned or you do not have the
+    /// required [`BAN_MEMBERS`] and [`MANAGE_GUILD`] permissions.
+    ///
+    /// [`BAN_MEMBERS`]: Permissions::BAN_MEMBERS
+    /// [`MANAGE_GUILD`]: Permissions::MANAGE_GUILD
+    pub async fn bulk_ban(
+        self,
+        http: &Http,
+        users: impl IntoIterator<Item = UserId>,
+        delete_message_seconds: u32,
+        reason: Option<&str>,
+    ) -> Result<BulkBanResponse> {
+        #[derive(serde::Serialize)]
+        struct BulkBan<I> {
+            user_ids: I,
+            delete_message_seconds: u32,
+        }
+
+        let map = BulkBan {
+            user_ids: SerializeIter::new(users.into_iter()),
+            delete_message_seconds,
+        };
+
+        http.bulk_ban_users(self, &map, reason).await
     }
 
     /// Gets a list of the guild's bans, with additional options and filtering. See
@@ -1077,8 +1105,10 @@ impl GuildId {
         #[cfg(feature = "cache")]
         {
             if let Some(cache) = cache_http.cache() {
-                if let Some(member) = cache.member(self, user_id) {
-                    return Ok(member.clone());
+                if let Some(guild) = cache.guild(self) {
+                    if let Some(member) = guild.members.get(&user_id) {
+                        return Ok(member.clone());
+                    }
                 }
             }
         }
@@ -1400,13 +1430,14 @@ impl GuildId {
     ///
     /// See the documentation on [`GuildPrune`] for more information.
     ///
-    /// **Note**: Requires the [Kick Members] permission.
+    /// **Note**: Requires [Kick Members] and [Manage Guild] permissions.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Http`] if the current user lacks permission.
     ///
     /// [Kick Members]: Permissions::KICK_MEMBERS
+    /// [Manage Guild]: Permissions::MANAGE_GUILD
     #[inline]
     pub async fn start_prune(self, http: impl AsRef<Http>, days: u8) -> Result<GuildPrune> {
         http.as_ref().start_guild_prune(self, days, None).await

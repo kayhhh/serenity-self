@@ -10,11 +10,9 @@ use crate::cache::Cache;
 use crate::http::{CacheHttp, Http};
 #[cfg(all(feature = "cache", feature = "model"))]
 use crate::internal::prelude::*;
-use crate::model::permissions::Permissions;
 use crate::model::prelude::*;
 #[cfg(feature = "model")]
 use crate::model::utils::avatar_url;
-use crate::model::Timestamp;
 
 /// Information about a member of a guild.
 ///
@@ -61,6 +59,11 @@ pub struct Member {
     /// The unique Id of the guild that the member is a part of.
     #[serde(default)]
     pub guild_id: GuildId,
+    /// If the member is currently flagged for sending excessive DMs to non-friend server members
+    /// in the last 24 hours.
+    ///
+    /// Will be None or a time in the past if the user is not flagged.
+    pub unusual_dm_activity_until: Option<Timestamp>,
 }
 
 bitflags! {
@@ -274,34 +277,20 @@ impl Member {
     /// Retrieves the ID and position of the member's highest role in the hierarchy, if they have
     /// one.
     ///
-    /// This _may_ return [`None`] if:
-    /// - the user has roles, but they are not present in the cache for cache inconsistency reasons
-    /// - you already have a write lock to the member's guild
+    /// This _may_ return [`None`] if the user has roles, but they are not present in the cache for
+    /// cache inconsistency reasons.
     ///
     /// The "highest role in hierarchy" is defined as the role with the highest position. If two or
     /// more roles have the same highest position, then the role with the lowest ID is the highest.
     #[cfg(feature = "cache")]
+    #[deprecated = "Use Guild::member_highest_role"]
     pub fn highest_role_info(&self, cache: impl AsRef<Cache>) -> Option<(RoleId, u16)> {
-        let guild = cache.as_ref().guild(self.guild_id)?;
-
-        let mut highest = None;
-
-        for role_id in &self.roles {
-            if let Some(role) = guild.roles.get(role_id) {
-                // Skip this role if this role in iteration has:
-                // - a position less than the recorded highest
-                // - a position equal to the recorded, but a higher ID
-                if let Some((id, pos)) = highest {
-                    if role.position < pos || (role.position == pos && role.id > id) {
-                        continue;
-                    }
-                }
-
-                highest = Some((role.id, role.position));
-            }
-        }
-
-        highest
+        cache
+            .as_ref()
+            .guild(self.guild_id)
+            .as_ref()
+            .and_then(|g| g.member_highest_role(self))
+            .map(|r| (r.id, r.position))
     }
 
     /// Kick the member from the guild.
@@ -593,6 +582,11 @@ pub struct PartialMember {
     ///
     /// [`Interaction`]: crate::model::application::Interaction
     pub permissions: Option<Permissions>,
+    /// If the member is currently flagged for sending excessive DMs to non-friend server members
+    /// in the last 24 hours.
+    ///
+    /// Will be None or a time in the past if the user is not flagged.
+    pub unusual_dm_activity_until: Option<Timestamp>,
 }
 
 impl From<PartialMember> for Member {
@@ -611,6 +605,7 @@ impl From<PartialMember> for Member {
             permissions: partial.permissions,
             communication_disabled_until: None,
             guild_id: partial.guild_id.unwrap_or_default(),
+            unusual_dm_activity_until: partial.unusual_dm_activity_until,
         }
     }
 }
@@ -628,6 +623,7 @@ impl From<Member> for PartialMember {
             guild_id: Some(member.guild_id),
             user: Some(member.user),
             permissions: member.permissions,
+            unusual_dm_activity_until: member.unusual_dm_activity_until,
         }
     }
 }

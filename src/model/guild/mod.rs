@@ -60,13 +60,8 @@ use crate::gateway::ShardMessenger;
 use crate::http::{CacheHttp, Http, UserPagination};
 #[cfg(feature = "model")]
 use crate::json::json;
-#[cfg(feature = "model")]
-use crate::model::application::{Command, CommandPermissions};
-#[cfg(feature = "model")]
-use crate::model::guild::automod::Rule;
 use crate::model::prelude::*;
 use crate::model::utils::*;
-use crate::model::Timestamp;
 
 /// A representation of a banning of a user.
 ///
@@ -78,6 +73,18 @@ pub struct Ban {
     pub reason: Option<String>,
     /// The user that was banned.
     pub user: User,
+}
+
+/// The response from [`GuildId::bulk_ban`].
+///
+/// [Discord docs](https://github.com/discord/discord-api-docs/pull/6720).
+#[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct BulkBanResponse {
+    /// The users that were successfully banned.
+    banned_users: Vec<UserId>,
+    /// The users that were not successfully banned.
+    failed_users: Vec<UserId>,
 }
 
 #[cfg_attr(feature = "typesize", derive(typesize::derive::TypeSize))]
@@ -255,8 +262,7 @@ pub struct Guild {
     ///
     /// Members might not all be available when the [`ReadyEvent`] is received if the
     /// [`Self::member_count`] is greater than the [`LARGE_THRESHOLD`] set by the library.
-    #[serde(serialize_with = "serialize_map_values")]
-    #[serde(deserialize_with = "deserialize_members")]
+    #[serde(with = "members")]
     pub members: HashMap<UserId, Member>,
     /// All voice and text channels contained within a guild.
     ///
@@ -433,21 +439,15 @@ impl Guild {
     }
 
     #[cfg(feature = "cache")]
+    #[deprecated = "Iterate through Guild::channels and use Iterator::find"]
     pub fn channel_id_from_name(
         &self,
-        cache: impl AsRef<Cache>,
+        #[allow(unused_variables)] cache: impl AsRef<Cache>,
         name: impl AsRef<str>,
     ) -> Option<ChannelId> {
         let name = name.as_ref();
-        let guild_channels = cache.as_ref().guild_channels(self.id)?;
 
-        for (id, channel) in guild_channels.iter() {
-            if channel.name == name {
-                return Some(*id);
-            }
-        }
-
-        None
+        self.channels.values().find(|c| c.name == name).map(|c| c.id)
     }
 
     /// Ban a [`User`] from the guild, deleting a number of days' worth of messages (`dmd`) between
@@ -523,6 +523,28 @@ impl Guild {
         }
 
         self.id.ban_with_reason(cache_http.http(), user, dmd, reason).await
+    }
+
+    /// Bans multiple users from the guild, returning the users that were and weren't banned.
+    ///
+    /// # Errors
+    ///
+    /// See [`GuildId::bulk_ban`] for more information.
+    pub async fn bulk_ban(
+        &self,
+        cache_http: impl CacheHttp,
+        users: impl IntoIterator<Item = UserId>,
+        delete_message_seconds: u32,
+        reason: Option<&str>,
+    ) -> Result<BulkBanResponse> {
+        #[cfg(feature = "cache")]
+        {
+            if let Some(cache) = cache_http.cache() {
+                self.require_perms(cache, Permissions::BAN_MEMBERS & Permissions::MANAGE_GUILD)?;
+            }
+        }
+
+        self.id.bulk_ban(cache_http.http(), users, delete_message_seconds, reason).await
     }
 
     /// Returns the formatted URL of the guild's banner image, if one exists.
@@ -1364,6 +1386,33 @@ impl Guild {
         guild_id.into().to_partial_guild(cache_http).await
     }
 
+    /// Gets the highest role a [`Member`] of this Guild has.
+    ///
+    /// Returns None if the member has no roles or the member from this guild.
+    #[must_use]
+    pub fn member_highest_role(&self, member: &Member) -> Option<&Role> {
+        let mut highest: Option<&Role> = None;
+
+        for role_id in &member.roles {
+            if let Some(role) = self.roles.get(role_id) {
+                // Skip this role if this role in iteration has:
+                // - a position less than the recorded highest
+                // - a position equal to the recorded, but a higher ID
+                if let Some(highest) = highest {
+                    if role.position < highest.position
+                        || (role.position == highest.position && role.id > highest.id)
+                    {
+                        continue;
+                    }
+                }
+
+                highest = Some(role);
+            }
+        }
+
+        highest
+    }
+
     /// Returns which of two [`User`]s has a higher [`Member`] hierarchy.
     ///
     /// Hierarchy is essentially who has the [`Role`] with the highest [`position`].
@@ -1380,20 +1429,15 @@ impl Guild {
     #[inline]
     pub fn greater_member_hierarchy(
         &self,
-        cache: impl AsRef<Cache>,
+        #[allow(unused_variables)] _cache: impl AsRef<Cache>,
         lhs_id: impl Into<UserId>,
         rhs_id: impl Into<UserId>,
     ) -> Option<UserId> {
-        self._greater_member_hierarchy(&cache, lhs_id.into(), rhs_id.into())
+        self._greater_member_hierarchy(lhs_id.into(), rhs_id.into())
     }
 
     #[cfg(feature = "cache")]
-    fn _greater_member_hierarchy(
-        &self,
-        cache: impl AsRef<Cache>,
-        lhs_id: UserId,
-        rhs_id: UserId,
-    ) -> Option<UserId> {
+    fn _greater_member_hierarchy(&self, lhs_id: UserId, rhs_id: UserId) -> Option<UserId> {
         // Check that the IDs are the same. If they are, neither is greater.
         if lhs_id == rhs_id {
             return None;
@@ -1406,10 +1450,13 @@ impl Guild {
             return Some(rhs_id);
         }
 
-        let lhs =
-            self.members.get(&lhs_id)?.highest_role_info(&cache).unwrap_or((RoleId::new(1), 0));
-        let rhs =
-            self.members.get(&rhs_id)?.highest_role_info(&cache).unwrap_or((RoleId::new(1), 0));
+        let lhs = self
+            .member_highest_role(self.members.get(&lhs_id)?)
+            .map_or((RoleId::new(1), 0), |r| (r.id, r.position));
+
+        let rhs = self
+            .member_highest_role(self.members.get(&rhs_id)?)
+            .map_or((RoleId::new(1), 0), |r| (r.id, r.position));
 
         // If LHS and RHS both have no top position or have the same role ID, then no one wins.
         if (lhs.1 == 0 && rhs.1 == 0) || (lhs.0 == rhs.0) {
@@ -1507,12 +1554,14 @@ impl Guild {
         self.id.invites(cache_http.http()).await
     }
 
-    /// Checks if the guild is 'large'. A guild is considered large if it has more than 250
-    /// members.
+    /// Checks if the guild is 'large'.
+    ///
+    /// A guild is considered large if it has more than 250 members.
     #[inline]
     #[must_use]
+    #[deprecated = "Use Guild::large"]
     pub fn is_large(&self) -> bool {
-        self.members.len() > LARGE_THRESHOLD as usize
+        self.member_count > u64::from(LARGE_THRESHOLD)
     }
 
     /// Kicks a [`Member`] from the guild.
@@ -1664,14 +1713,9 @@ impl Guild {
     ///
     /// For the `prefix` "zey" and the unsorted result:
     /// - "zeya", "zeyaa", "zeyla", "zeyzey", "zeyzeyzey"
+    ///
     /// It would be sorted:
     /// - "zeya", "zeyaa", "zeyla", "zeyzey", "zeyzeyzey"
-    ///
-    /// **Locking**: First collects a [`Member`]'s [`User`]-name by read-locking all inner
-    /// [`User`]s, and then sorts. This ensures that no name is being changed after being sorted in
-    /// the originally correct position. However, since the read-locks are dropped after borrowing
-    /// the name, the names might have been changed by the user, the sorted list cannot account for
-    /// this.
     ///
     /// **Note**: This will only search members that are cached. If you want to search all members
     /// in the guild via the Http API, use [`Self::search_members`].
@@ -1720,6 +1764,7 @@ impl Guild {
     ///
     /// If the substring is "yla", following results are possible:
     /// - "zeyla", "meiyla", "yladenisyla"
+    ///
     /// If 'case_sensitive' is false, the following are not found:
     /// - "zeYLa", "meiyLa", "LYAdenislyA"
     ///
@@ -1729,18 +1774,13 @@ impl Guild {
     ///
     /// For the `substring` "zey" and the unsorted result:
     /// - "azey", "zey", "zeyla", "zeylaa", "zeyzeyzey"
+    ///
     /// It would be sorted:
     /// - "zey", "azey", "zeyla", "zeylaa", "zeyzeyzey"
     ///
     /// **Note**: Due to two fields of a [`Member`] being candidates for the searched field,
     /// setting `sorted` to `true` will result in an overhead, as both fields have to be considered
     /// again for sorting.
-    ///
-    /// **Locking**: First collects a [`Member`]'s [`User`]-name by read-locking all inner
-    /// [`User`]s, and then sorts. This ensures that no name is being changed after being sorted in
-    /// the originally correct position. However, since the read-locks are dropped after borrowing
-    /// the name, the names might have been changed by the user, the sorted list cannot account for
-    /// this.
     ///
     /// **Note**: This will only search members that are cached. If you want to search all members
     /// in the guild via the Http API, use [`Self::search_members`].
@@ -1781,6 +1821,7 @@ impl Guild {
     ///
     /// If the substring is "yla", following results are possible:
     /// - "zeyla", "meiyla", "yladenisyla"
+    ///
     /// If 'case_sensitive' is false, the following are not found:
     /// - "zeYLa", "meiyLa", "LYAdenislyA"
     ///
@@ -1789,14 +1830,9 @@ impl Guild {
     ///
     /// For the `substring` "zey" and the unsorted result:
     /// - "azey", "zey", "zeyla", "zeylaa", "zeyzeyzey"
+    ///
     /// It would be sorted:
     /// - "zey", "azey", "zeyla", "zeylaa", "zeyzeyzey"
-    ///
-    /// **Locking**: First collects a [`Member`]'s [`User`]-name by read-locking all inner
-    /// [`User`]s, and then sorts. This ensures that no name is being changed after being sorted in
-    /// the originally correct position. However, since the read-locks are dropped after borrowing
-    /// the name, the names might have been changed by the user, the sorted list cannot account for
-    /// this.
     ///
     /// **Note**: This will only search members that are cached. If you want to search all members
     /// in the guild via the Http API, use [`Self::search_members`].
@@ -1827,6 +1863,7 @@ impl Guild {
     ///
     /// If the substring is "yla", following results are possible:
     /// - "zeyla", "meiyla", "yladenisyla"
+    ///
     /// If 'case_sensitive' is false, the following are not found:
     /// - "zeYLa", "meiyLa", "LYAdenislyA"
     ///
@@ -1835,17 +1872,12 @@ impl Guild {
     ///
     /// For the `substring` "zey" and the unsorted result:
     /// - "azey", "zey", "zeyla", "zeylaa", "zeyzeyzey"
+    ///
     /// It would be sorted:
     /// - "zey", "azey", "zeyla", "zeylaa", "zeyzeyzey"
     ///
     /// **Note**: Instead of panicking, when sorting does not find a nick, the username will be
     /// used (this should never happen).
-    ///
-    /// **Locking**: First collects a [`Member`]'s nick directly or by read-locking all inner
-    /// [`User`]s (in case of no nick, see note above), and then sorts. This ensures that no name
-    /// is being changed after being sorted in the originally correct position. However, since the
-    /// read-locks are dropped after borrowing the name, the names might have been changed by the
-    /// user, the sorted list cannot account for this.
     ///
     /// **Note**: This will only search members that are cached. If you want to search all members
     /// in the guild via the Http API, use [`Self::search_members`].
@@ -1873,20 +1905,18 @@ impl Guild {
     }
 
     /// Calculate a [`Member`]'s permissions in the guild.
-    ///
-    /// If member caching is enabled the cache will be checked first. If not found it will resort
-    /// to an http request.
-    ///
-    /// Cache is still required to look up roles.
-    ///
-    /// # Errors
-    ///
-    /// See [`Guild::member`].
     #[inline]
     #[cfg(feature = "cache")]
     #[must_use]
     pub fn member_permissions(&self, member: &Member) -> Permissions {
-        Self::_user_permissions_in(None, member, &self.roles, self.owner_id, self.id)
+        Self::_user_permissions_in(
+            None,
+            member.user.id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
     }
 
     /// Moves a member to a specific voice channel.
@@ -1910,23 +1940,53 @@ impl Guild {
     }
 
     /// Calculate a [`Member`]'s permissions in a given channel in the guild.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Model`] if the [`Member`] has a non-existent role for some reason.
     #[inline]
     #[must_use]
     pub fn user_permissions_in(&self, channel: &GuildChannel, member: &Member) -> Permissions {
-        Self::_user_permissions_in(Some(channel), member, &self.roles, self.owner_id, self.id)
+        Self::_user_permissions_in(
+            Some(channel),
+            member.user.id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
+    }
+
+    /// Calculate a [`PartialMember`]'s permissions in a given channel in a guild.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the passed [`UserId`] does not match the [`PartialMember`] id, if user is Some.
+    #[must_use]
+    pub fn partial_member_permissions_in(
+        &self,
+        channel: &GuildChannel,
+        member_id: UserId,
+        member: &PartialMember,
+    ) -> Permissions {
+        if let Some(user) = &member.user {
+            assert_eq!(user.id, member_id, "User::id does not match provided PartialMember");
+        }
+
+        Self::_user_permissions_in(
+            Some(channel),
+            member_id,
+            &member.roles,
+            self.id,
+            &self.roles,
+            self.owner_id,
+        )
     }
 
     /// Helper function that can also be used from [`PartialGuild`].
     pub(crate) fn _user_permissions_in(
         channel: Option<&GuildChannel>,
-        member: &Member,
+        member_user_id: UserId,
+        member_roles: &[RoleId],
+        guild_id: GuildId,
         guild_roles: &HashMap<RoleId, Role>,
         guild_owner_id: UserId,
-        guild_id: GuildId,
     ) -> Permissions {
         let mut everyone_allow_overwrites = Permissions::empty();
         let mut everyone_deny_overwrites = Permissions::empty();
@@ -1939,7 +1999,7 @@ impl Guild {
             for overwrite in &channel.permission_overwrites {
                 match overwrite.kind {
                     PermissionOverwriteType::Member(user_id) => {
-                        if member.user.id == user_id {
+                        if member_user_id == user_id {
                             member_allow_overwrites = overwrite.allow;
                             member_deny_overwrites = overwrite.deny;
                         }
@@ -1948,7 +2008,7 @@ impl Guild {
                         if role_id.get() == guild_id.get() {
                             everyone_allow_overwrites = overwrite.allow;
                             everyone_deny_overwrites = overwrite.deny;
-                        } else if member.roles.contains(&role_id) {
+                        } else if member_roles.contains(&role_id) {
                             roles_allow_overwrites.push(overwrite.allow);
                             roles_deny_overwrites.push(overwrite.deny);
                         }
@@ -1958,7 +2018,7 @@ impl Guild {
         }
 
         calculate_permissions(CalculatePermissions {
-            is_guild_owner: member.user.id == guild_owner_id,
+            is_guild_owner: member_user_id == guild_owner_id,
             everyone_permissions: if let Some(role) = guild_roles.get(&RoleId::new(guild_id.get()))
             {
                 role.permissions
@@ -1966,8 +2026,7 @@ impl Guild {
                 error!("@everyone role missing in {}", guild_id);
                 Permissions::empty()
             },
-            user_roles_permissions: member
-                .roles
+            user_roles_permissions: member_roles
                 .iter()
                 .map(|role_id| {
                     if let Some(role) = guild_roles.get(role_id) {
@@ -1975,7 +2034,7 @@ impl Guild {
                     } else {
                         warn!(
                             "{} on {} has non-existent role {:?}",
-                            member.user.id, guild_id, role_id
+                            member_user_id, guild_id, role_id
                         );
                         Permissions::empty()
                     }
@@ -2295,7 +2354,7 @@ impl Guild {
     ///
     /// See the documentation on [`GuildPrune`] for more information.
     ///
-    /// **Note**: Requires the [Kick Members] permission.
+    /// **Note**: Requires [Kick Members] and [Manage Guild] permissions.
     ///
     /// # Errors
     ///
@@ -2307,13 +2366,14 @@ impl Guild {
     /// Can also return an [`Error::Json`] if there is an error deserializing the API response.
     ///
     /// [Kick Members]: Permissions::KICK_MEMBERS
+    /// [Manage Guild]: Permissions::MANAGE_GUILD
     /// [`Error::Http`]: crate::error::Error::Http
     /// [`Error::Json`]: crate::error::Error::Json
     pub async fn start_prune(&self, cache_http: impl CacheHttp, days: u8) -> Result<GuildPrune> {
         #[cfg(feature = "cache")]
         {
             if let Some(cache) = cache_http.cache() {
-                self.require_perms(cache, Permissions::KICK_MEMBERS)?;
+                self.require_perms(cache, Permissions::KICK_MEMBERS | Permissions::MANAGE_GUILD)?;
             }
         }
 

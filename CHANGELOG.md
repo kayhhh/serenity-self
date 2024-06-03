@@ -3,15 +3,103 @@
 All notable changes to this project will be documented in this file.
 This project mostly adheres to [Semantic Versioning][semver].
 
-## [0.13.0-alpha2] - 2023-12-04
+## [0.12.2] - 2024-06-01
 
-In a noteworthy advancement, Serenity-self now establishes a pioneering standard for simplicity and efficacy within Rust crates, particularly in the domain of user token support.
-This release builds upon the 0.13.0-alpha series, eliminating excessive flags associated with connection setup.
+Thanks to the following for their contributions:
 
-This milestone positions Serenity-self as the leading Rust crate for Discord user support, specifically tailored for the development of selfbots.
-The focus on minimal flags underscores a commitment to streamlining processes, making it an unparalleled choice for developers seeking a straightforward and effective solution in the Rust ecosystem.
+- [@bend-n]
+- [@GnomedDev]
+- [@jamesbt365]
+- [@MidSpike]
+- [@mkrasnitski]
+- [@RegenJacob]
 
-Thanks to the following for their contributions on Serenity before Serenity-self was made:
+### Deprecations
+
+Continuing with the deprecations started in 0.12.1, many more methods and fields have been deprecated in order to make an easier upgrade path to 0.13.
+
+These deprecation messages include a migration path, it is recommended to go one by one using `cargo check` and migrate each warning to reduce the burden migrating to 0.13. Following is a list of the deprecation PRs and the justification for these changes.
+
+- ([#2791](https://github.com/serenity-rs/serenity/pull/2791)) The `Channel::is_nsfw` method was wrong, useless, and served better by `GuildChannel::nsfw`
+- ([#2794](https://github.com/serenity-rs/serenity/pull/2794)) These cache methods needed arcane borrow checker dances internally, and obscure the simplicity of the cache.
+- ([#2816](https://github.com/serenity-rs/serenity/pull/2816)) `Member::highest_role_info` is now strictly less powerful than the new `Guild::member_highest_role` and can avoid a cache lookup if used correctly.
+- ([#2825](https://github.com/serenity-rs/serenity/pull/2825))
+- - `Guild::is_large` is less accurate than `Guild::large`
+- - `Message::is_own` is super simple to implement yourself
+- - `Message::is_private` simply checks if `Message::guild_id` is `none`.
+- ([#2838](https://github.com/serenity-rs/serenity/pull/2838)) `Event::PresencesReplace` does not exist, and is a relic from when serenity supported user accounts.
+- ([#2861](https://github.com/serenity-rs/serenity/pull/2861)) `TeamMember::permissions` is always `["*"]`, so is useless.
+
+### Other notable changes
+
+- ([#2790](https://github.com/serenity-rs/serenity/pull/2790])) Added `CreateMessage::enforce_nonce`, to prevent sending duplicate messages.
+- ([#2801](https://github.com/serenity-rs/serenity/pull/2801)) Added `EditProfile::banner`, allowing banners to be set for bots.
+- ([#2810](https://github.com/serenity-rs/serenity/pull/2810)) Added `ChannelId::get_thread_member`.
+- ([#2812](https://github.com/serenity-rs/serenity/pull/2812)) Added `Guild::partial_member_permissions_in`, which can be used to avoid fetching a `Member` in message events just to check permissions.
+- ([#2819](https://github.com/serenity-rs/serenity/pull/2819)) Added `From<User>` for `CreateEmbedAuthor`, setting the author name and icon to the `User`'s info.
+- ([#2813](https://github.com/serenity-rs/serenity/pull/2813)) Added `UserId::direct_message`, so you don't need a full `User` to direct message.
+- ([#2834](https://github.com/serenity-rs/serenity/pull/2834)) Added `Http::default_allowed_mentions` to set the `AllowedMentions` to be used with every request.
+- ([#2830](https://github.com/serenity-rs/serenity/pull/2830)) Added `Guild`(`Id`)`::bulk_ban`, allowing bulk banning without hitting rate limits.
+- ([#2836](https://github.com/serenity-rs/serenity/pull/2836)) Added support for **Message Polls**, including reading and sending them.
+- ([#2807](https://github.com/serenity-rs/serenity/pull/2807)) Added support for **User Apps**, alllowing user-installable application commands.
+- ([#2882](https://github.com/serenity-rs/serenity/pull/2882)) Added support for super reactions.
+- Many documentation fixes and other optimisations to improve memory and CPU usage.
+
+## [0.12.1] - 2024-02-28
+
+Thanks to the following for their contributions:
+
+- [@arqunis]
+- [@GnomedDev]
+- [@jamesbt365]
+- [@kangalio]
+- [@logand22]
+- [@mkrasnitski]
+- [@SenseiHiraku]
+- [@vaporoxx]
+- [@vidhanio]
+- [@Xaeroxe]
+- [@yanorei32]
+
+### Notable changes
+
+In this release, **the standard framework has been deprecated**
+([#2733](https://github.com/serenity-rs/serenity/pull/2733)).
+
+As Discord continues to endorse and evolve application commands (`/...`
+commands, user commands, message commands, etc.), the standard framework
+becomes increasingly outdated. Bots are also steadily losing (and already have
+lost) access to contents of messages, making it difficult to build a
+prefix-only bot. Unless you plan on restricting your bot to only accept
+commands in DMs, allowing its presence in only fewer than 100 guilds, or
+presenting a reasonable justification to Discord for permission to continue
+using message contents, you should migrate to application commands. We
+recommend [poise](https://github.com/serenity-rs/poise), which supports writing
+both prefix and application commands with a `#[command]` macro like the
+standard framework.
+
+#### Why not just update the framework?
+
+Poise already exists and is better than the standard framework. Efforts should
+be directed at improving poise instead. To support application commands would
+require an overhaul of the standard framework, as they are special (for
+instance, Discord parses arguments on behalf of the bot and passes them as
+structured data, whereas for prefix commands, the bot must parse by itself).
+
+### Smaller, but still notable changes
+
+* ([#2621](https://github.com/serenity-rs/serenity/pull/2621)) Add a temporary cache for messages.
+* ([#2649](https://github.com/serenity-rs/serenity/pull/2649)) Deprecate `RoleId::to_role_cached` - Use `Guild::roles` instead.
+* ([#2726](https://github.com/serenity-rs/serenity/pull/2726)) Pack bitflags - Reduces alignments of `bitflags!` types, resulting in a smaller memory footprint.
+* ([#2696](https://github.com/serenity-rs/serenity/pull/2696)) Support attachments in forum posts.
+* ([#2560](https://github.com/serenity-rs/serenity/pull/2560)) Add support for monetization APIs.
+* ([#2648](https://github.com/serenity-rs/serenity/pull/2648)) Deprecate inefficient Emoji helpers - Use the emoji methods on `GuildId`/`Guild` instead.
+
+## [0.12.0] - 2023-11-27
+
+This release turned out to be one of serenity's largest ever, with well over 300 PRs in total! It contains quite a few major breaking changes to the API. Therefore, the changelog for this release also serves as a migration guide for users upgrading from the 0.11 series.
+
+Thanks to the following for their contributions:
 
 - [@arqunis]
 - [@alakhpc]
@@ -27,8 +115,8 @@ Thanks to the following for their contributions on Serenity before Serenity-self
 - [@Joshument]
 - [@kangalio]
 - [@Kneemund]
-- [@marcantoinem]
 - [@LaytonGB]
+- [@marcantoinem]
 - [@Miezhiko]
 - [@Milo123459]
 - [@mkrasnitski]
@@ -43,37 +131,7 @@ Thanks to the following for their contributions on Serenity before Serenity-self
 - [@vaporoxx]
 - [@Xaeroxe]
 
-### Changes in 0.13.0-alpha2:
-These are the changes in Serenity-self since the 0.13.0-alpha release.
-
-- All provided examples have been meticulously updated.
-
-In this release, Serenity-self continues to adhere to the principles established in the original version.
-It's important to note, however, that there are distinctions between the user and bot APIs which Serenity-self now focuses more on.
-
-The adjustments primarily focus on aligning with the revised approach to user account support.
-Notably, this entails the removal of both shards and intents from the examples.
-
-While users can perform many of the actions bots can, there are differences in the scope of their capabilities. 
-Users have access to a broader range of functionalities compared to bots.
-
-Several features have been intentionally removed to align with Discord's guidelines and best practices:
-
-1. **Intents:**
-   - The gateway technically accepts intents for user accounts. However, the use of intents for users is discouraged due to potential issues and is considered a violation of Discord's policies.
-
-2. **Shards:**
-   - Although the gateway accepts shards for user accounts, employing them is not recommended. Similar to intents, the use of shards for users is discouraged and can be flagged as a violation by Discord.
-
-These adjustments aim to ensure a smoother and compliant user experience, prioritizing adherence to Discord's standards. 
-Users are encouraged to review these changes and adjust their implementations accordingly for a more seamless integration with the Serenity-self crate.
-
-By eliminating the usage of shards and intents in the examples, streamlined and compliant integration for user accounts is ensured.
-This modification reflects commitment to adhering to Discord's guidelines and best practices.
-Users are encouraged to leverage these updated examples to seamlessly incorporate the latest features and improvements offered by the Serenity-self crate.
-
-### Builders (Before 0.13.0-alpha):
-These are the changes before Serenity-self became its own crate without syncing with Serenity's changes
+### Builders
 
 The closure-based API for constructing requests using the builder pattern has been ripped out and replaced. In place of closures, users must now pass in builder types directly. For example, in serenity 0.11, code like the following was very common:
 
@@ -414,8 +472,6 @@ Serenity now uses Rust edition 2021, with an MSRV of Rust 1.74.
 * [#2622](https://github.com/serenity-rs/serenity/pull/2622) - Implement role addition/removal using dedicated endpoints.
 * [#2623](https://github.com/serenity-rs/serenity/pull/2623) - Use dedicated types for `GuildId::audit_logs`.
 * [#2625](https://github.com/serenity-rs/serenity/pull/2625) - Change `Guild::members_with_status` to return `impl Iterator<Item = &Member>` instead of `Vec<Member>`.
-
-
 #### Removed
 
 * [#1864](https://github.com/serenity-rs/serenity/pull/1864), [#1902](https://github.com/serenity-rs/serenity/pull/1902) - Remove all deprecated types, fields, and methods.
@@ -677,7 +733,6 @@ Thanks to the following for their contributions:
 
 Thanks to the following for their contributions:
 
-- [@nshout]
 - [@AldanTanneo]
 - [@AngelOnFira]
 - [@AnnikaCodes]
@@ -710,7 +765,7 @@ Thanks to the following for their contributions:
 - [@squili]
 - [@TheBlackfurGuy]
 - [@tylerd008]
-- [@vaporoxxx]
+- [@vaporoxx]
 - [@vicky5124]
 - [@xMAC94x]
 - [@xfix]
@@ -5368,7 +5423,9 @@ Initial commit.
 
 <!-- COMPARISONS -->
 
-[0.12.0]: https://github.com/serenity-rs/serenity/compare/v0.11.7...v0.12.0-rc
+[0.12.2]: https://github.com/serenity-rs/serenity/compare/v0.12.1...v0.12.2
+[0.12.1]: https://github.com/serenity-rs/serenity/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/serenity-rs/serenity/compare/v0.11.7...v0.12.0
 [0.11.7]: https://github.com/serenity-rs/serenity/compare/v0.11.6...v0.11.7
 [0.11.6]: https://github.com/serenity-rs/serenity/compare/v0.11.5...v0.11.6
 [0.11.5]: https://github.com/serenity-rs/serenity/compare/v0.11.4...v0.11.5
@@ -5463,7 +5520,6 @@ Initial commit.
 
 <!-- AUTHORS -->
 
-[@nshout]: https://github.com/nshout
 [@7596ff]: https://github.com/7596ff
 [@AgathaSorceress]: https://github.com/AgathaSorceress
 [@alakhpc]: https://github.com/alakhpc
@@ -5493,6 +5549,7 @@ Initial commit.
 [@baeuric]: https://github.com/baeuric
 [@barzamin]: https://github.com/barzamin
 [@bdashore3]: https://github.com/bdashore3
+[@bend-n]: https://github.com/bend-n
 [@benjaminrsherman]: https://github.com/benjaminrsherman
 [@ben-brook]: https://github.com/ben-brook
 [@bikeshedder]: https://github.com/bikeshedder
@@ -5592,9 +5649,9 @@ Initial commit.
 [@kotx]: https://github.com/kotx
 [@ks129]: https://github.com/ks129
 [@kyranet]: https://github.com/kyranet
-[@LaytonGB]: https://github.com/LaytonGB
 [@Lakelezz]: https://github.com/Lakelezz
 [@LavaToaster]: https://github.com/LavaToaster
+[@LaytonGB]: https://github.com/LaytonGB
 [@LeSeulArtichaut]: https://github.com/LeSeulArtichaut
 [@Licenser]: https://github.com/Licenser
 [@LikeLakers2]: https://github.com/LikeLakers2
@@ -5605,6 +5662,7 @@ Initial commit.
 [@leumasme]: https://github.com/leumasme
 [@lhjt]: https://github.com/lhjt
 [@lo48576]: https://github.com/lo48576
+[@logand22]: https://github.com/logand22
 [@lolzballs]: https://github.com/lolzballs
 [@marcantoinem]: https://github.com/marcantoinem
 [@MarkusTheOrt]: https://github.com/MarkusTheOrt
@@ -5624,6 +5682,7 @@ Initial commit.
 [@megumisonoda]: https://github.com/megumisonoda
 [@mendess]: https://github.com/mendess
 [@merlleu]: https://github.com/merlleu
+[@MidSpike]: https://github.com/MidSpike
 [@Miezhiko]: https://github.com/Miezhiko
 [@miqbalrr]: https://github.com/miqbalrr
 [@mjsir911]: https://github.com/mjsir911
@@ -5659,11 +5718,13 @@ Initial commit.
 [@Roughsketch]: https://github.com/Roughsketch
 [@Rstar284]: https://github.com/Rstar284
 [@rasm47]: https://github.com/rasm47
+[@RegenJacob]: https://github.com/RegenJacob
 [@rsaihe]: https://github.com/rsaihe
 [@Ruthenic]: https://github.com/Ruthenic
 [@SOF3]: https://github.com/SOF3
 [@Sei4or]: https://github.com/Sei4or
 [@SadiinsoSnowfall]: https://github.com/SadiinsoSnowfall
+[@SenseiHiraku]: https://github.com/SenseiHiraku
 [@sandlotie]: https://github.com/sandlotie
 [@Scetch]: https://github.com/Scetch
 [@ShashankKumarSaxena]: https://github.com/ShashankKumarSaxena
@@ -5707,6 +5768,7 @@ Initial commit.
 [@Vaimer9]: https://github.com/Vaimer9
 [@vaporoxx]: https://github.com/vaporoxx
 [@vicky5124]: https://github.com/vicky5124
+[@vidhanio]: https://github.com/vidhanio
 [@vityafx]: https://github.com/vityafx
 [@vivianhellyer]: https://github.com/vivianhellyer
 [@Web-44]: https://github.com/Web-44
@@ -5718,6 +5780,7 @@ Initial commit.
 [@Xaeroxe]: https://github.com/Xaeroxe
 [@xentec]: https://github.com/xentec
 [@xfix]: https://github.com/xfix
+[@yanorei32]: https://github.com/yanorei32
 [@Zalaxx]: https://github.com/Zalaxx
 [@zacck]: https://github.com/zacck
 [@zack37]: https://github.com/zack37

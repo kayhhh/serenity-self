@@ -226,8 +226,10 @@ fn update_cache_with_event(
         },
         Event::GuildMemberUpdate(mut event) => {
             let before = if_cache!(event.update(cache));
-            let after: Option<Member> =
-                if_cache!(cache.member(event.guild_id, event.user.id).map(|m| m.clone()));
+            let after: Option<Member> = if_cache!({
+                let guild = cache.guild(event.guild_id);
+                guild.and_then(|g| g.members.get(&event.user.id).cloned())
+            });
 
             FullEvent::GuildMemberUpdate {
                 old_if_available: before,
@@ -315,12 +317,9 @@ fn update_cache_with_event(
                 event,
             }
         },
-        Event::PresencesReplace(mut event) => {
-            update_cache!(cache, event);
-
-            FullEvent::PresenceReplace {
-                presences: event.presences,
-            }
+        #[allow(deprecated)]
+        Event::PresencesReplace(event) => FullEvent::PresenceReplace {
+            presences: event.presences,
         },
         Event::PresenceUpdate(mut event) => {
             update_cache!(cache, event);
@@ -476,6 +475,21 @@ fn update_cache_with_event(
         },
         Event::GuildScheduledEventUserRemove(event) => FullEvent::GuildScheduledEventUserRemove {
             unsubscribed: event,
+        },
+        Event::EntitlementCreate(event) => FullEvent::EntitlementCreate {
+            entitlement: event.entitlement,
+        },
+        Event::EntitlementUpdate(event) => FullEvent::EntitlementUpdate {
+            entitlement: event.entitlement,
+        },
+        Event::EntitlementDelete(event) => FullEvent::EntitlementDelete {
+            entitlement: event.entitlement,
+        },
+        Event::MessagePollVoteAdd(event) => FullEvent::MessagePollVoteAdd {
+            event,
+        },
+        Event::MessagePollVoteRemove(event) => FullEvent::MessagePollVoteRemove {
+            event,
         },
     };
 

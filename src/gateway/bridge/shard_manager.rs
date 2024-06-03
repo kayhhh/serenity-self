@@ -24,6 +24,7 @@ use crate::gateway::{ConnectionStage, GatewayError, PresenceData};
 use crate::http::Http;
 use crate::internal::prelude::*;
 use crate::internal::tokio::spawn_named;
+use crate::model::gateway::GatewayIntents;
 
 /// A manager for handling the status of shards by starting them, restarting them, and stopping
 /// them when required.
@@ -114,6 +115,7 @@ pub struct ShardManager {
     // and only is ever used to receive a single message
     shard_shutdown: Mutex<Receiver<ShardId>>,
     shard_shutdown_send: Sender<ShardId>,
+    gateway_intents: GatewayIntents,
 }
 
 impl ShardManager {
@@ -136,6 +138,7 @@ impl ShardManager {
             shard_shutdown: Mutex::new(shutdown_recv),
             shard_shutdown_send: shutdown_send,
             runners: Arc::clone(&runners),
+            gateway_intents: opt.intents,
         });
 
         let mut shard_queuer = ShardQueuer {
@@ -155,6 +158,7 @@ impl ShardManager {
             #[cfg(feature = "cache")]
             cache: opt.cache,
             http: opt.http,
+            intents: opt.intents,
             presence: opt.presence,
         };
 
@@ -250,9 +254,9 @@ impl ShardManager {
     /// Returns a boolean indicating whether a shard runner was present. This is _not_ necessary an
     /// indicator of whether the shard runner was successfully shut down.
     ///
-    /// **Note**: If the receiving end of an mpsc channel - theoretically owned by the shard runner
-    /// - no longer exists, then the shard runner will not know it should shut down. This _should
-    /// never happen_. It may already be stopped.
+    /// **Note**: If the receiving end of an mpsc channel - owned by the shard runner - no longer
+    /// exists, then the shard runner will not know it should shut down. This _should never happen_.
+    /// It may already be stopped.
     #[instrument(skip(self))]
     pub async fn shutdown(&self, shard_id: ShardId, code: u16) {
         const TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
@@ -329,6 +333,12 @@ impl ShardManager {
         drop(self.shard_queuer.unbounded_send(msg));
     }
 
+    /// Returns the gateway intents used for this gateway connection.
+    #[must_use]
+    pub fn intents(&self) -> GatewayIntents {
+        self.gateway_intents
+    }
+
     pub async fn return_with_value(&self, ret: Result<(), GatewayError>) {
         if let Err(e) = self.return_value_tx.lock().await.send(ret).await {
             tracing::warn!("failed to send return value: {}", e);
@@ -388,5 +398,6 @@ pub struct ShardManagerOptions {
     #[cfg(feature = "cache")]
     pub cache: Arc<Cache>,
     pub http: Arc<Http>,
+    pub intents: GatewayIntents,
     pub presence: Option<PresenceData>,
 }
