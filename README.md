@@ -28,9 +28,10 @@ This will cause your handler to be called when a [`Event::MessageCreate`] is
 received. Each handler is given a [`Context`], giving information about the
 event. See the [client's module-level documentation].
 
-The [`Shard`] is transparently handled by the library, removing
+~~The [`Shard`] is transparently handled by the library, removing
 unnecessary complexity. Sharded connections are automatically handled for
-you. See the [gateway's documentation][gateway docs] for more information.
+you. See the [gateway's documentation][gateway docs] for more information.~~~
+Removed.
 
 A [`Cache`] is also provided for you. This will be updated automatically for
 you as data is received from the Discord API via events. When calling a
