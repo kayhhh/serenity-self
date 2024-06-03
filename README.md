@@ -50,7 +50,7 @@ Changed the token check to allow user tokens for the development of selfbots.
 
 Credits
 - [Serenity](https://github.com/serenity-rs/serenity) for the original Discord API wrapper
-- [@Suffix](https://github.com/suffixarchive) for testing and helping with bug hunting
+- [@Suffix](https://github.com/suffixsec) for testing and helping with bug hunting
 
 # Example Bot
 
