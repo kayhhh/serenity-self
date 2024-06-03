@@ -894,10 +894,6 @@ impl Client {
             return Err(Error::Client(ClientError::ShardBootFailure));
         }
 
-        if let Some(Err(err)) = self.shard_manager_return_value.next().await {
-            return Err(Error::Gateway(err));
-        }
-
         Ok(())
     }
 }
